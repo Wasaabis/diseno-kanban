@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kanban-disetight-band-76ce",
+  "main": "src/handler.js",
+  "compatibility_date": "2026-03-20",
+  "observability": {
+    "enabled": true
+  },
+  "rules": [
+    { "type": "Text", "globs": ["**/*.html"], "fallthrough": true }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "342fe96c3658473eb3dc03407c31a6e6"
+    }
+  ]
+}

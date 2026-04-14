@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Forever Us · Tablero</title>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:"Open Sans",sans-serif;background:#F4F5F7;color:#1A1A2E;min-height:100vh;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-thumb{background:#CCC;border-radius:2px;}
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;}
+.login-box{width:420px;background:#FFF;border-radius:14px;padding:40px 36px;box-shadow:0 4px 24px rgba(0,0,0,0.08);border:1px solid #E8E8F0;}
+.eyebrow{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.25em;color:#B8860B;text-transform:uppercase;text-align:center;margin-bottom:6px;}
+.login-box h1{font-family:"Optima","Candara","Gill Sans",sans-serif;text-transform:uppercase;font-size:22px;font-weight:600;color:#1A1A2E;letter-spacing:.06em;text-align:center;margin-bottom:8px;}
+.login-box p{color:#999;font-size:12px;text-align:center;margin-bottom:24px;}
+.login-box label{font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.1em;display:block;margin-bottom:6px;}
+.login-box input{width:100%;padding:10px 12px;border:1px solid #DDE;border-radius:7px;font-family:monospace;font-size:12px;outline:none;margin-bottom:14px;}
+.btn-primary{width:100%;padding:12px;background:linear-gradient(135deg,#3A86FF,#2563EB);color:#FFF;border:none;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;}
+.btn-primary:disabled{background:#EEE;color:#AAA;cursor:not-allowed;}
+.error-box{padding:10px 12px;background:#FFF0F0;border:1px solid #FFAAAA;border-radius:7px;color:#CC0000;font-size:12px;margin-bottom:14px;}
+#app{display:none;flex-direction:column;min-height:100vh;}
+header{background:#FFF;border-bottom:1px solid #E8E8F0;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 8px rgba(0,0,0,0.05);}
+.header-left{display:flex;align-items:center;gap:16px;}
+.header-eyebrow{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.25em;color:#B8860B;text-transform:uppercase;}
+.header-title{font-family:"Optima","Candara","Gill Sans",sans-serif;text-transform:uppercase;font-weight:600;font-size:20px;letter-spacing:.04em;color:#1A1A2E;margin-top:2px;}
+.divider{height:32px;width:1px;background:#E8E8F0;}
+.col-badge{padding:3px 10px;border-radius:20px;font-size:10px;font-family:"JetBrains Mono",monospace;display:inline-flex;align-items:center;gap:4px;}
+.header-right{display:flex;gap:8px;align-items:center;}
+.btn-refresh{padding:7px 16px;background:none;border:1px solid #3A86FF44;color:#3A86FF;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:"Open Sans",sans-serif;}
+.btn-settings{padding:7px 12px;background:none;border:1px solid #E0E0E0;color:#AAA;border-radius:6px;cursor:pointer;font-size:13px;}
+.pedidos-count{font-family:"JetBrains Mono",monospace;font-size:9px;color:#CCC;letter-spacing:.1em;}
+#board{display:flex;gap:12px;padding:18px 16px;overflow-x:auto;align-items:flex-start;flex:1;}
+.column{flex:0 0 215px;border-radius:12px;background:#ECEEF2;border:1.5px solid #E0E2EA;display:flex;flex-direction:column;min-height:480px;transition:background .2s,border-color .2s;}
+.column.drag-over{border-color:#3A86FF55;background:#3A86FF06;}
+.col-header{padding:13px 13px 0;}
+.col-title-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.col-dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+.col-name{font-family:"Optima","Candara","Gill Sans",sans-serif;text-transform:uppercase;font-size:13px;font-weight:600;color:#1A1A2E;letter-spacing:.04em;margin-left:7px;}
+.col-count{font-family:"JetBrains Mono",monospace;font-size:10px;color:#FFF;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;}
+.col-filters{display:flex;flex-wrap:wrap;gap:4px;padding-bottom:10px;border-bottom:1px solid #E0E2EA22;}
+.filter-chip{padding:3px 8px;border-radius:20px;cursor:pointer;font-family:"JetBrains Mono",monospace;font-size:9px;font-weight:600;border:1px solid #DDD;background:#F0F0F4;color:#AAA;display:inline-flex;align-items:center;gap:4px;transition:all .15s;}
+.filter-chip.active{background:var(--chip-bg);border-color:var(--chip-border);color:var(--chip-color);}
+.cards-area{padding:10px;display:flex;flex-direction:column;gap:8px;flex:1;}
+.empty-col{height:50px;display:flex;align-items:center;justify-content:center;color:#CCC;font-size:10px;font-family:"JetBrains Mono",monospace;}
+.card{background:#FFF;border:1px solid #E8E8F0;border-radius:10px;padding:11px 12px 10px;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,0.06);position:relative;transition:box-shadow .2s,transform .15s;animation:fadeIn .3s ease both;}
+.card:hover{box-shadow:0 4px 14px rgba(0,0,0,0.10);transform:translateY(-1px);}
+.card.dragging{opacity:.3;cursor:grabbing;}
+.drop-indicator{height:3px;background:#3A86FF;border-radius:3px;margin:2px 0;}
+.card-top-bar{position:absolute;top:0;left:0;right:0;height:3px;border-radius:10px 10px 0 0;}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;margin-top:4px;}
+.joyeria-badge{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.12em;font-weight:600;padding:2px 7px;border-radius:3px;}
+.nota-label{font-family:"JetBrains Mono",monospace;font-size:10px;color:#B8860B;font-weight:600;letter-spacing:.06em;}
+.card-modelo1{font-family:"Optima","Candara","Gill Sans",sans-serif;text-transform:uppercase;font-size:12px;font-weight:600;line-height:1.35;color:#1A1A2E;margin-bottom:4px;}
+.card-status-area{margin-top:8px;padding-top:8px;border-top:1px solid #F3F3F3;}
+.status-btn{background:none;border:none;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:3px;}
+.status-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-family:"JetBrains Mono",monospace;font-size:9px;font-weight:600;white-space:nowrap;}
+.status-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
+.status-arrow{font-size:8px;color:#AAA;}
+.stale-pill{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:20px;font-family:"JetBrains Mono",monospace;font-size:9px;font-weight:600;white-space:nowrap;margin-left:6px;}
+.stale-warn{background:#FFF3CD;border:1px solid #FFD96A;color:#856404;}
+.stale-alert{background:#FFE0E0;border:1px solid #F5AAAA;color:#B00020;animation:stalePulse 2s ease-in-out infinite;}
+.stale-sub{font-family:"JetBrains Mono",monospace;font-size:8px;color:#999;margin-left:6px;font-weight:500;white-space:nowrap;}
+.stale-sub.col-warn{color:#856404;background:#FFF3CD;border:1px solid #FFD96A;padding:1px 6px;border-radius:10px;}
+@keyframes stalePulse{0%,100%{box-shadow:0 0 0 0 rgba(204,0,0,0);}50%{box-shadow:0 0 0 3px rgba(204,0,0,0.15);}}
+.card.stale-warn-card{border-color:#FFD96A;}
+.card.stale-alert-card{border-color:#F5AAAA;background:#FFF9F9;}
+#dropdown{position:fixed;z-index:9999;background:#FFF;border:1px solid #E0E0E0;border-radius:8px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,0.14);display:none;flex-direction:column;gap:3px;min-width:148px;}
+#dropdown.open{display:flex;}
+#backdrop{position:fixed;inset:0;z-index:9998;display:none;}
+#backdrop.open{display:block;}
+.dd-option{background:transparent;border:1px solid transparent;border-radius:6px;padding:6px 10px;cursor:pointer;display:flex;align-items:center;gap:7px;}
+.dd-option:hover{background:#F5F5F5;}
+.dd-option.selected{background:var(--opt-bg);border-color:var(--opt-border);}
+.dd-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.dd-label{font-size:11px;font-family:"JetBrains Mono",monospace;font-weight:600;}
+footer{background:#FFF;border-top:1px solid #EBEBEB;padding:8px 28px;display:flex;justify-content:space-between;}
+.footer-text{font-family:"JetBrains Mono",monospace;font-size:9px;color:#CCC;letter-spacing:.1em;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:640px){
+  #board{padding:10px 8px;gap:8px;}
+  .column{flex:0 0 80vw;}
+  header{padding:10px 14px;flex-wrap:wrap;gap:6px;}
+  .header-left{flex-wrap:wrap;}
+  .header-title{font-size:16px;}
+  .btn-refresh{padding:5px 10px;font-size:10px;}
+}
+</style>
+</head>
+<body>
+
+<div id="spinner" style="display:none;min-height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:#F4F5F7;">
+  <div style="width:36px;height:36px;border:3px solid #E0E0E0;border-top:3px solid #3A86FF;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+  <p style="font-family:JetBrains Mono,monospace;font-size:11px;color:#AAA;letter-spacing:0.15em;">CONECTANDO CON ZOHO...</p>
+</div>
+
+<div id="login">
+  <div class="login-box">
+    <div class="eyebrow">Forever Us - Produccion</div>
+    <h1>Tablero de Diseno</h1>
+    <p>Pega tu Access Token de Zoho para comenzar</p>
+    <label>Access Token</label>
+    <input id="tokenInput" type="text" placeholder="1000.xxxxxxxx..."/>
+    <div id="loginError" class="error-box" style="display:none"></div>
+    <button class="btn-primary" id="connectBtn">Conectar con Zoho</button>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="header-left">
+      <div>
+        <div class="header-eyebrow">Forever Us - Produccion</div>
+        <div class="header-title">Tablero de Diseno</div>
+      </div>
+      <div class="divider"></div>
+      <div id="colBadges" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+    </div>
+    <div class="header-right">
+      <span id="errorMsg" style="font-size:11px;color:#CC0000;display:none;"></span>
+      <a class="btn-refresh" href="/report" style="text-decoration:none;display:inline-flex;align-items:center;">Reporte</a>
+      <button class="btn-refresh" id="refreshBtn">Actualizar</button>
+      <button class="btn-settings" id="logoutBtn">Ajustes</button>
+      <span id="pedidosCount" class="pedidos-count"></span>
+    </div>
+  </header>
+  <div id="board"></div>
+  <footer>
+    <span class="footer-text">FOREVER US DISENO INTERNO</span>
+    <span class="footer-text">Arrastra - Toca el status para cambiarlo</span>
+  </footer>
+</div>
+
+<div id="backdrop"></div>
+<div id="dropdown"></div>
+
+<script>
+var WORKER = window.location.origin;
+var HARDCODED_REFRESH = "1000.96ec15b1403cb2c0929e7a9d50e04e7f.b4e2091a3f3b5e5da7f8ce700cf02ba5";
+var LS_TOKEN = "fu_token";
+var LS_TOKEN_EXP = "fu_token_exp";
+var LS_REFRESH = "fu_refresh";
+var LS_POSITIONS = "fu_positions";
+
+var COLUMNS = [
+  {id:"datos_listos", label:"Datos Listos", accent:"#3A86FF"},
+  {id:"disenado",     label:"Disenado",     accent:"#2ECC71"},
+  {id:"enviado",      label:"Enviado",      accent:"#F4A100"},
+  {id:"confirmado",   label:"Confirmado",   accent:"#8B5CF6"},
+  {id:"impreso",      label:"Impreso",      accent:"#EF4444"},
+  {id:"espera_f3",    label:"Espera a F3",  accent:"#94A3B8"}
+];
+
+var STATUSES = {
+  datos_listos:[
+    {id:"SI",      label:"SI",         bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
+    {id:"NO",      label:"NO",         bg:"#FFF3CD", color:"#856404", border:"#FFD96A"}
+  ],
+  disenado:[
+    {id:"DISENADO",label:"DISENADO",   bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
+    {id:"AUN NO",  label:"AUN NO",     bg:"#FFF3CD", color:"#856404", border:"#FFD96A"}
+  ],
+  enviado:[
+    {id:"ENVIADO", label:"ENVIADO",    bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
+    {id:"AUN NO",  label:"AUN NO",     bg:"#FFF3CD", color:"#856404", border:"#FFD96A"}
+  ],
+  confirmado:[
+    {id:"CAMBIOS",    label:"CAMBIOS",    bg:"#D0E8FF", color:"#0066CC", border:"#90C4F0"},
+    {id:"CONFIRMADO", label:"CONFIRMADO", bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
+    {id:"AUN NO",     label:"AUN NO",     bg:"#FFF3CD", color:"#856404", border:"#FFD96A"}
+  ],
+  impreso:[
+    {id:"ESPERA",      label:"ESPERA",      bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"},
+    {id:"IMPRESO",     label:"IMPRESO",     bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
+    {id:"NO NECESITA", label:"NO NECESITA", bg:"#EFEFEF", color:"#666",    border:"#CCC"},
+    {id:"REIMPRESION", label:"REIMPRESION", bg:"#FFE0E0", color:"#CC0000", border:"#F5AAAA"},
+    {id:"IMPRIMIENDO", label:"IMPRIMIENDO", bg:"#D0E8FF", color:"#0066CC", border:"#90C4F0"}
+  ],
+  espera_f3:[
+    {id:"IMPRESO",     label:"IMPRESO",     bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
+    {id:"NO NECESITA", label:"NO NECESITA", bg:"#EFEFEF", color:"#666",    border:"#CCC"}
+  ]
+};
+
+var STALE_DAYS_DEFAULT = 1;
+var STALE_DAYS_BY_COL = { impreso: 3 };
+var DAY_MS = 24 * 60 * 60 * 1000;
+var TERMINAL_STATES = { impreso: ["IMPRESO", "NO NECESITA"], espera_f3: ["IMPRESO", "NO NECESITA"] };
+
+var token = "";
+var cards = [];
+var filters = {};
+var draggingId = null;
+var dropdownCardId = null;
+
+function staleThreshold(colId) {
+  return STALE_DAYS_BY_COL[colId] || STALE_DAYS_DEFAULT;
+}
+function isTerminal(card) {
+  var list = TERMINAL_STATES[card.col] || [];
+  return list.indexOf(card.status) !== -1;
+}
+function daysTotal(card) {
+  if (!card.bornAt) return 0;
+  return Math.floor((Date.now() - card.bornAt) / DAY_MS);
+}
+function daysInCol(card) {
+  if (!card.colSince) return 0;
+  return Math.floor((Date.now() - card.colSince) / DAY_MS);
+}
+function staleLevel(card) {
+  if (isTerminal(card)) return null;
+  var th = staleThreshold(card.col);
+  var d = daysTotal(card);
+  if (d >= th * 2) return "alert";
+  if (d >= th) return "warn";
+  return null;
+}
+
+/* TOKEN */
+function saveToken(t, exp) {
+  localStorage.setItem(LS_TOKEN, t);
+  localStorage.setItem(LS_TOKEN_EXP, String(Date.now() + (exp || 3600) * 1000));
+}
+function getSavedToken() {
+  var t = localStorage.getItem(LS_TOKEN);
+  var exp = parseInt(localStorage.getItem(LS_TOKEN_EXP) || "0");
+  if (t && Date.now() < exp - 60000) return t;
+  return null;
+}
+async function refreshToken() {
+  var rt = localStorage.getItem(LS_REFRESH) || HARDCODED_REFRESH;
+  try {
+    var res = await fetch(WORKER + "/token?grant_type=refresh&refresh_token=" + encodeURIComponent(rt));
+    var data = await res.json();
+    if (data.access_token) {
+      saveToken(data.access_token, data.expires_in || 3600);
+      return data.access_token;
+    }
+  } catch(e) {}
+  return null;
+}
+async function getToken() {
+  var saved = getSavedToken();
+  if (saved) return saved;
+  return await refreshToken();
+}
+
+/* EVENTS */
+function logEvent(card, type, extras) {
+  var ev = Object.assign({
+    cardId: card.id,
+    joyeria: card.joyeria,
+    nota: card.nota,
+    type: type,
+    at: Date.now()
+  }, extras || {});
+  try {
+    fetch(WORKER + "/events", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(ev)
+    });
+  } catch(e) {}
+}
+
+/* POSITIONS */
+async function savePositions() {
+  var pos = {};
+  cards.forEach(function(c) { pos[c.id] = {col: c.col, status: c.status, bornAt: c.bornAt, colSince: c.colSince, joyeria: c.joyeria, nota: c.nota}; });
+  var json = JSON.stringify(pos);
+  localStorage.setItem(LS_POSITIONS, json);
+  try {
+    await fetch(WORKER + "/kv", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({key: "positions", value: json})
+    });
+  } catch(e) {}
+}
+async function loadPositions() {
+  try {
+    var res = await fetch(WORKER + "/kv?key=positions");
+    if (res.ok) {
+      var data = await res.json();
+      if (data.value) return JSON.parse(data.value);
+    }
+  } catch(e) {}
+  try { return JSON.parse(localStorage.getItem(LS_POSITIONS) || "{}"); } catch(e) { return {}; }
+}
+
+/* API */
+async function zohoGet(endpoint) {
+  var t = await getToken();
+  if (!t) throw new Error("Sin token");
+  token = t;
+  var url = "https://www.zohoapis.com/crm/v2/" + endpoint;
+  var res = await fetch(WORKER + "/zoho?url=" + encodeURIComponent(url), {
+    headers: {Authorization: "Zoho-oauthtoken " + t}
+  });
+  return res.json();
+}
+function mapRecord(r, pos) {
+  var p = pos[r.id] || {};
+  var now = Date.now();
+  var isNew = !p.bornAt;
+  return {
+    id:       r.id,
+    joyeria:  r.Ubicaci_n_de_Sucursal || "-",
+    nota:     r.Subject || "-",
+    col:      p.col    || "datos_listos",
+    status:   p.status || "SI",
+    bornAt:   p.bornAt   || now,
+    colSince: p.colSince || now,
+    _justBorn: isNew
+  };
+}
+
+function emitBornEvents(list) {
+  var newborns = list.filter(function(c) { return c._justBorn; });
+  newborns.forEach(function(c) {
+    logEvent(c, "born", {from: null, to: c.col, fromStatus: null, toStatus: c.status});
+    delete c._justBorn;
+  });
+  if (newborns.length) savePositions();
+}
+
+/* INIT */
+window.addEventListener("load", async function() {
+  localStorage.setItem(LS_REFRESH, HARDCODED_REFRESH);
+  showSpinner();
+  var t = await getToken();
+  if (t) {
+    token = t;
+    await loadAndShow();
+  } else {
+    hideSpinner();
+    showLoginScreen("");
+  }
+});
+
+async function loadAndShow() {
+  try {
+    var data = await zohoGet("Quotes/search?criteria=(Etapa:equals:Dise%C3%B1o)&per_page=200");
+    if (data.status === "error" || data.code) throw new Error(data.message || "Error");
+    var pos = await loadPositions();
+    cards = (data.data || []).map(function(r) { return mapRecord(r, pos); });
+    emitBornEvents(cards);
+    showApp();
+  } catch(e) {
+    localStorage.removeItem(LS_TOKEN);
+    localStorage.removeItem(LS_TOKEN_EXP);
+    hideSpinner();
+    showLoginScreen(e.message);
+  }
+}
+
+/* UI */
+function showSpinner() {
+  document.getElementById("spinner").style.display = "flex";
+  document.getElementById("login").style.display = "none";
+  document.getElementById("app").style.display = "none";
+}
+function hideSpinner() {
+  document.getElementById("spinner").style.display = "none";
+}
+function showLoginScreen(msg) {
+  document.getElementById("login").style.display = "flex";
+  document.getElementById("app").style.display = "none";
+  if (msg) {
+    var el = document.getElementById("loginError");
+    el.textContent = msg;
+    el.style.display = "block";
+  }
+}
+function showApp() {
+  document.getElementById("spinner").style.display = "none";
+  document.getElementById("login").style.display = "none";
+  document.getElementById("app").style.display = "flex";
+  renderBoard();
+  if (!window._staleTimer) {
+    window._staleTimer = setInterval(renderBoard, 30 * 60 * 1000);
+    window.addEventListener("focus", renderBoard);
+  }
+}
+
+document.getElementById("connectBtn").addEventListener("click", async function() {
+  var inp = document.getElementById("tokenInput").value.trim();
+  if (!inp) return;
+  var btn = document.getElementById("connectBtn");
+  btn.disabled = true; btn.textContent = "Conectando...";
+  document.getElementById("loginError").style.display = "none";
+  try {
+    token = inp;
+    var data = await zohoGet("Quotes/search?criteria=(Etapa:equals:Dise%C3%B1o)&per_page=200");
+    if (data.status === "error" || data.code) throw new Error(data.message || "Token invalido");
+    saveToken(inp, 3600);
+    var pos = await loadPositions();
+    cards = (data.data || []).map(function(r) { return mapRecord(r, pos); });
+    emitBornEvents(cards);
+    showApp();
+  } catch(e) {
+    var el = document.getElementById("loginError");
+    el.textContent = e.message;
+    el.style.display = "block";
+    token = "";
+  } finally {
+    btn.disabled = false; btn.textContent = "Conectar con Zoho";
+  }
+});
+
+document.getElementById("refreshBtn").addEventListener("click", async function() {
+  try {
+    var data = await zohoGet("Quotes/search?criteria=(Etapa:equals:Dise%C3%B1o)&per_page=200");
+    var pos = await loadPositions();
+    cards = (data.data || []).map(function(r) { return mapRecord(r, pos); });
+    emitBornEvents(cards);
+    renderBoard();
+  } catch(e) {
+    var el = document.getElementById("errorMsg");
+    el.textContent = e.message;
+    el.style.display = "inline";
+    setTimeout(function() { el.style.display = "none"; }, 4000);
+  }
+});
+
+document.getElementById("logoutBtn").addEventListener("click", function() {
+  localStorage.removeItem(LS_TOKEN);
+  localStorage.removeItem(LS_TOKEN_EXP);
+  token = ""; cards = [];
+  showLoginScreen("");
+});
+
+document.getElementById("backdrop").addEventListener("click", closeDropdown);
+
+/* RENDER */
+function getColCards(colId) {
+  var all = cards.filter(function(c) { return c.col === colId; });
+  var active = filters[colId];
+  if (!active || active.size === 0) return all;
+  return all.filter(function(c) { return active.has(c.status); });
+}
+function getStatusDef(colId, statusId) {
+  var list = STATUSES[colId] || [];
+  for (var i=0; i<list.length; i++) { if (list[i].id === statusId) return list[i]; }
+  return null;
+}
+
+function renderBoard() {
+  var badgesEl = document.getElementById("colBadges");
+  badgesEl.innerHTML = "";
+  COLUMNS.forEach(function(col) {
+    var count = cards.filter(function(c) { return c.col === col.id; }).length;
+    var span = document.createElement("span");
+    span.className = "col-badge";
+    span.style.cssText = "background:" + col.accent + "12;border:1px solid " + col.accent + "33;color:" + col.accent;
+    span.innerHTML = "<strong>" + count + "</strong>&nbsp;" + col.label;
+    badgesEl.appendChild(span);
+  });
+  document.getElementById("pedidosCount").textContent = cards.length + " pedidos";
+
+  var board = document.getElementById("board");
+  board.innerHTML = "";
+
+  COLUMNS.forEach(function(col) {
+    var colCards = getColCards(col.id);
+    var totalInCol = cards.filter(function(c) { return c.col === col.id; }).length;
+    var activeFilters = filters[col.id] || new Set();
+    var statuses = STATUSES[col.id] || [];
+
+    var colEl = document.createElement("div");
+    colEl.className = "column";
+    colEl.dataset.col = col.id;
+
+    /* Header */
+    var header = document.createElement("div");
+    header.className = "col-header";
+
+    var titleRow = document.createElement("div");
+    titleRow.className = "col-title-row";
+    var titleLeft = document.createElement("div");
+    titleLeft.style.display = "flex";
+    titleLeft.style.alignItems = "center";
+    var dot = document.createElement("span");
+    dot.className = "col-dot";
+    dot.style.cssText = "background:" + col.accent + ";box-shadow:0 0 0 2px " + col.accent + "33";
+    var name = document.createElement("span");
+    name.className = "col-name";
+    name.textContent = col.label;
+    titleLeft.appendChild(dot);
+    titleLeft.appendChild(name);
+    var countEl = document.createElement("span");
+    countEl.className = "col-count";
+    countEl.style.background = col.accent;
+    countEl.textContent = totalInCol;
+    titleRow.appendChild(titleLeft);
+    titleRow.appendChild(countEl);
+
+    var filtersDiv = document.createElement("div");
+    filtersDiv.className = "col-filters";
+    statuses.forEach(function(s) {
+      var isActive = activeFilters.has(s.id);
+      var chip = document.createElement("button");
+      chip.className = "filter-chip" + (isActive ? " active" : "");
+      chip.style.setProperty("--chip-bg", s.bg);
+      chip.style.setProperty("--chip-border", s.border);
+      chip.style.setProperty("--chip-color", s.color);
+      chip.textContent = s.label;
+      chip.dataset.col = col.id;
+      chip.dataset.status = s.id;
+      chip.addEventListener("click", function() {
+        toggleFilter(this.dataset.col, this.dataset.status);
+      });
+      filtersDiv.appendChild(chip);
+    });
+
+    header.appendChild(titleRow);
+    header.appendChild(filtersDiv);
+    colEl.appendChild(header);
+
+    /* Cards */
+    var area = document.createElement("div");
+    area.className = "cards-area";
+    area.id = "cards-" + col.id;
+
+    colCards.forEach(function(card, i) {
+      area.appendChild(makeCard(card, col, i));
+    });
+
+    if (colCards.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "empty-col";
+      empty.textContent = "vacio";
+      area.appendChild(empty);
+    }
+
+    colEl.appendChild(area);
+
+    colEl.addEventListener("dragover", onDragOverCol);
+    colEl.addEventListener("dragleave", function() {
+      colEl.classList.remove("drag-over");
+      colEl.querySelectorAll(".drop-indicator").forEach(function(el) { el.remove(); });
+    });
+    colEl.addEventListener("drop", function(e) {
+      e.preventDefault();
+      colEl.classList.remove("drag-over");
+      colEl.querySelectorAll(".drop-indicator").forEach(function(el) { el.remove(); });
+      onDrop(col.id, e.clientY);
+    });
+
+    board.appendChild(colEl);
+  });
+}
+
+function makeCard(card, col, i) {
+  var def = getStatusDef(col.id, card.status);
+  var isTaller = card.joyeria === "TALLER";
+
+  var cardEl = document.createElement("div");
+  cardEl.className = "card";
+  var sLevel = staleLevel(card);
+  if (sLevel === "warn") cardEl.classList.add("stale-warn-card");
+  else if (sLevel === "alert") cardEl.classList.add("stale-alert-card");
+  cardEl.dataset.id = card.id;
+  cardEl.draggable = true;
+  cardEl.style.animationDelay = (i * 0.04) + "s";
+
+  var bar = document.createElement("div");
+  bar.className = "card-top-bar";
+  bar.style.background = col.accent;
+  cardEl.appendChild(bar);
+
+  var ch = document.createElement("div");
+  ch.className = "card-header";
+  var badge = document.createElement("span");
+  badge.className = "joyeria-badge";
+  badge.style.cssText = "background:" + (isTaller?"#FFF3E0":"#EFF6FF") + ";border:1px solid " + (isTaller?"#FFB74D55":"#93C5FD55") + ";color:" + (isTaller?"#E65100":"#1D4ED8");
+  badge.textContent = card.joyeria;
+  var nota = document.createElement("span");
+  nota.className = "nota-label";
+  nota.textContent = card.nota;
+  ch.appendChild(badge);
+  ch.appendChild(nota);
+  cardEl.appendChild(ch);
+
+  var statusArea = document.createElement("div");
+  statusArea.className = "card-status-area";
+  var btn = document.createElement("button");
+  btn.className = "status-btn";
+  if (def) {
+    var pill = document.createElement("span");
+    pill.className = "status-pill";
+    pill.style.cssText = "background:" + def.bg + ";border:1px solid " + def.border + ";color:" + def.color;
+    var sdot = document.createElement("span");
+    sdot.className = "status-dot";
+    sdot.style.background = def.color;
+    pill.appendChild(sdot);
+    pill.appendChild(document.createTextNode(def.label));
+    btn.appendChild(pill);
+  }
+  var arrow = document.createElement("span");
+  arrow.className = "status-arrow";
+  arrow.textContent = "v";
+  btn.appendChild(arrow);
+  btn.dataset.cardId = card.id;
+  btn.addEventListener("click", function(e) {
+    openDropdown(e, this.dataset.cardId);
+  });
+  statusArea.appendChild(btn);
+
+  if (!isTerminal(card)) {
+    var dT = daysTotal(card);
+    var dC = daysInCol(card);
+    if (sLevel) {
+      var stale = document.createElement("span");
+      stale.className = "stale-pill " + (sLevel === "alert" ? "stale-alert" : "stale-warn");
+      stale.title = "Edad total en tablero: " + dT + "d · en esta fase: " + dC + "d";
+      stale.textContent = "⏱ " + dT + "d";
+      statusArea.appendChild(stale);
+    }
+    var sub = document.createElement("span");
+    sub.className = "stale-sub" + (dC >= 2 ? " col-warn" : "");
+    sub.title = "Edad total: " + dT + "d · en esta fase: " + dC + "d" + (dC >= 2 ? " (lleva tiempo sin moverse)" : "");
+    sub.textContent = dC + "d aqui";
+    statusArea.appendChild(sub);
+  }
+
+  statusArea.addEventListener("mousedown", function(e) { e.stopPropagation(); });
+  statusArea.addEventListener("dragstart", function(e) { e.stopPropagation(); e.preventDefault(); });
+  cardEl.appendChild(statusArea);
+
+  cardEl.addEventListener("dragstart", function(e) { onDragStart(e, card.id); });
+  cardEl.addEventListener("dragend", onDragEnd);
+  cardEl.addEventListener("dragover", function(e) { e.preventDefault(); e.stopPropagation(); });
+  cardEl.addEventListener("touchstart", function(e) { onTouchStart(e, card.id); }, {passive: false});
+
+  return cardEl;
+}
+
+/* FILTERS */
+function toggleFilter(colId, statusId) {
+  if (!filters[colId]) filters[colId] = new Set();
+  if (filters[colId].has(statusId)) filters[colId].delete(statusId);
+  else filters[colId].add(statusId);
+  renderBoard();
+}
+
+/* POSITION HELPERS */
+function getInsertIndex(colId, clientY) {
+  var colEl = document.querySelector(".column[data-col='" + colId + "']");
+  if (!colEl) return -1;
+  var cardEls = Array.from(colEl.querySelectorAll(".card:not(.dragging)"));
+  for (var i=0; i<cardEls.length; i++) {
+    var rect = cardEls[i].getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) {
+      var targetId = cardEls[i].dataset.id;
+      var colCards = cards.filter(function(c) { return c.col === colId && c.id != draggingId; });
+      return colCards.findIndex(function(c) { return c.id == targetId; });
+    }
+  }
+  return -1;
+}
+
+function insertCard(card, colId, insertIdx) {
+  var colChanged = card.col !== colId;
+  var prevCol = card.col;
+  var prevStatus = card.status;
+  var newStatus;
+  if (colChanged) {
+    if (prevCol === "espera_f3" && colId === "impreso") {
+      newStatus = "REIMPRESION";
+    } else {
+      newStatus = ((STATUSES[colId]||[])[0] || {id: card.status}).id;
+    }
+  } else {
+    newStatus = card.status;
+  }
+  var rest = cards.filter(function(c) { return c.id !== card.id; });
+  card.col = colId;
+  card.status = newStatus;
+  if (colChanged) {
+    card.colSince = Date.now();
+    logEvent(card, "col_change", {from: prevCol, to: colId, fromStatus: prevStatus, toStatus: newStatus});
+    if (isTerminal(card)) {
+      logEvent(card, "terminated", {from: prevCol, to: colId, fromStatus: prevStatus, toStatus: newStatus});
+    }
+  }
+  var colCards = rest.filter(function(c) { return c.col === colId; });
+  if (insertIdx < 0 || insertIdx >= colCards.length) colCards.push(card);
+  else colCards.splice(insertIdx, 0, card);
+  var ci = 0;
+  var newCards = rest.map(function(c) { return c.col === colId ? colCards[ci++] : c; });
+  while (ci < colCards.length) newCards.push(colCards[ci++]);
+  cards = newCards;
+}
+
+/* DESKTOP DRAG */
+function onDragStart(e, id) {
+  draggingId = id;
+  setTimeout(function() {
+    var el = document.querySelector("[data-id='" + id + "']");
+    if (el) el.classList.add("dragging");
+  }, 0);
+}
+function onDragEnd() {
+  draggingId = null;
+  document.querySelectorAll(".card.dragging").forEach(function(el) { el.classList.remove("dragging"); });
+}
+function onDragOverCol(e) {
+  e.preventDefault();
+  var col = e.currentTarget;
+  col.classList.add("drag-over");
+  col.querySelectorAll(".drop-indicator").forEach(function(el) { el.remove(); });
+  var area = col.querySelector(".cards-area");
+  if (!area) return;
+  var cardEls = Array.from(area.querySelectorAll(".card:not(.dragging)"));
+  var inserted = false;
+  for (var i=0; i<cardEls.length; i++) {
+    var rect = cardEls[i].getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      var ind = document.createElement("div");
+      ind.className = "drop-indicator";
+      area.insertBefore(ind, cardEls[i]);
+      inserted = true;
+      break;
+    }
+  }
+  if (!inserted) {
+    var ind = document.createElement("div");
+    ind.className = "drop-indicator";
+    area.appendChild(ind);
+  }
+}
+function onDrop(colId, clientY) {
+  if (!draggingId) return;
+  var card = cards.find(function(c) { return c.id == draggingId; });
+  if (!card) return;
+  var idx = getInsertIndex(colId, clientY || 0);
+  insertCard(card, colId, idx);
+  draggingId = null;
+  savePositions();
+  renderBoard();
+}
+
+/* TOUCH DRAG */
+var touchClone = null;
+var touchOffX = 0;
+var touchOffY = 0;
+
+function onTouchStart(e, id) {
+  if (e.target.closest(".card-status-area")) return;
+  e.preventDefault();
+  draggingId = id;
+  var touch = e.touches[0];
+  var cardEl = document.querySelector("[data-id='" + id + "']");
+  cardEl.classList.add("dragging");
+  var rect = cardEl.getBoundingClientRect();
+  touchOffX = touch.clientX - rect.left;
+  touchOffY = touch.clientY - rect.top;
+  touchClone = cardEl.cloneNode(true);
+  touchClone.style.cssText = "position:fixed;z-index:9997;width:" + rect.width + "px;opacity:0.88;pointer-events:none;box-shadow:0 8px 28px rgba(0,0,0,0.2);transform:rotate(1.5deg);border-radius:10px;";
+  touchClone.style.left = (touch.clientX - touchOffX) + "px";
+  touchClone.style.top  = (touch.clientY - touchOffY) + "px";
+  document.body.appendChild(touchClone);
+}
+
+document.addEventListener("touchmove", function(e) {
+  if (!draggingId || !touchClone) return;
+  e.preventDefault();
+  var touch = e.touches[0];
+  var x = touch.clientX, y = touch.clientY;
+  touchClone.style.left = (x - touchOffX) + "px";
+  touchClone.style.top  = (y - touchOffY) + "px";
+  var board = document.getElementById("board");
+  var br = board.getBoundingClientRect();
+  if (x < br.left + 80) board.scrollLeft -= 12;
+  else if (x > br.right - 80) board.scrollLeft += 12;
+  if (y < 100) window.scrollBy(0, -10);
+  else if (y > window.innerHeight - 100) window.scrollBy(0, 10);
+  touchClone.style.display = "none";
+  var under = document.elementFromPoint(x, y);
+  touchClone.style.display = "";
+  document.querySelectorAll(".column").forEach(function(c) { c.classList.remove("drag-over"); });
+  var col = under ? under.closest(".column") : null;
+  if (col) col.classList.add("drag-over");
+}, {passive: false});
+
+document.addEventListener("touchend", function(e) {
+  if (!draggingId) return;
+  var touch = e.changedTouches[0];
+  if (touchClone) { touchClone.remove(); touchClone = null; }
+  document.querySelectorAll(".card.dragging").forEach(function(el) { el.classList.remove("dragging"); });
+  document.querySelectorAll(".column.drag-over").forEach(function(c) { c.classList.remove("drag-over"); });
+  var under = document.elementFromPoint(touch.clientX, touch.clientY);
+  var col = under ? under.closest(".column") : null;
+  if (col) {
+    var colId = col.dataset.col;
+    var card = cards.find(function(c) { return c.id == draggingId; });
+    if (card && colId) {
+      insertCard(card, colId, getInsertIndex(colId, touch.clientY));
+      savePositions();
+    }
+  }
+  draggingId = null;
+  renderBoard();
+});
+
+/* DROPDOWN */
+function openDropdown(e, cardId) {
+  e.stopPropagation();
+  var rect = e.currentTarget.getBoundingClientRect();
+  var card = cards.find(function(c) { return c.id == cardId; });
+  if (!card) return;
+  dropdownCardId = cardId;
+  var statuses = STATUSES[card.col] || [];
+  var dd = document.getElementById("dropdown");
+  dd.innerHTML = "";
+  statuses.forEach(function(s) {
+    var btn = document.createElement("button");
+    btn.className = "dd-option" + (card.status === s.id ? " selected" : "");
+    btn.style.setProperty("--opt-bg", s.bg);
+    btn.style.setProperty("--opt-border", s.border);
+    var dot = document.createElement("span");
+    dot.className = "dd-dot";
+    dot.style.background = s.color;
+    var lbl = document.createElement("span");
+    lbl.className = "dd-label";
+    lbl.style.color = s.color;
+    lbl.textContent = s.label;
+    btn.appendChild(dot);
+    btn.appendChild(lbl);
+    btn.dataset.statusId = s.id;
+    btn.addEventListener("click", function() { selectStatus(this.dataset.statusId); });
+    dd.appendChild(btn);
+  });
+  dd.style.top  = (rect.bottom + 4) + "px";
+  dd.style.left = rect.left + "px";
+  dd.classList.add("open");
+  document.getElementById("backdrop").classList.add("open");
+}
+function selectStatus(statusId) {
+  var card = cards.find(function(c) { return c.id == dropdownCardId; });
+  if (card) {
+    var prevStatus = card.status;
+    if (prevStatus !== statusId) {
+      card.status = statusId;
+      logEvent(card, "status_change", {from: card.col, to: card.col, fromStatus: prevStatus, toStatus: statusId});
+      if (isTerminal(card)) {
+        logEvent(card, "terminated", {from: card.col, to: card.col, fromStatus: prevStatus, toStatus: statusId});
+      }
+      if (card.col === "impreso" && (statusId === "IMPRESO" || statusId === "NO NECESITA")) {
+        var prevCol = card.col;
+        card.col = "espera_f3";
+        card.colSince = Date.now();
+        logEvent(card, "col_change", {from: prevCol, to: "espera_f3", fromStatus: statusId, toStatus: statusId});
+      }
+      savePositions();
+      renderBoard();
+    }
+  }
+  closeDropdown();
+}
+function closeDropdown() {
+  document.getElementById("dropdown").classList.remove("open");
+  document.getElementById("backdrop").classList.remove("open");
+  dropdownCardId = null;
+}
+</script>
+</body>
+</html>

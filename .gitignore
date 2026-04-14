@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.dev.vars
+_*.bin
+_*.txt
+_*.json
+_parse.mjs
