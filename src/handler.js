@@ -29,7 +29,7 @@ export default {
       let body;
       if (grant_type === "refresh") {
         const rt = url.searchParams.get("refresh_token");
-        body = new URLSearchParams({grant_type:"refresh_token", client_id:"1000.RERIFMR5TE3GIC5F2K7FNXZ6F3NP2M", client_secret:"2584fefcf66e1bc7c5762a30adc1e213a0921f64a2", refresh_token:rt});
+        body = new URLSearchParams({grant_type:"refresh_token", client_id:"1000.RERIFMR5TE3GIC5F2K7FNXZ6F3NP2M", client_secret:"2584fefcf66e1bc7c5762aeae3284d3d0e8069390c", refresh_token:rt});
       } else {
         body = new URLSearchParams({grant_type:"authorization_code", client_id:url.searchParams.get("client_id"), client_secret:url.searchParams.get("client_secret"), redirect_uri:url.searchParams.get("redirect_uri"), code:url.searchParams.get("code")});
       }
