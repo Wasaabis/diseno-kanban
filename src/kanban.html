@@ -302,6 +302,24 @@ async function zohoGet(endpoint) {
   });
   return res.json();
 }
+async function zohoPut(endpoint, body) {
+  var t = await getToken();
+  if (!t) throw new Error("Sin token");
+  token = t;
+  var url = "https://www.zohoapis.com/crm/v2/" + endpoint;
+  var res = await fetch(WORKER + "/zoho?url=" + encodeURIComponent(url), {
+    method: "PUT",
+    headers: {Authorization: "Zoho-oauthtoken " + t, "Content-Type": "application/json"},
+    body: JSON.stringify(body)
+  });
+  var data;
+  try { data = await res.json(); } catch(e) { data = null; }
+  if (!res.ok || !data || (data.data && data.data[0] && data.data[0].status === "error")) {
+    var msg = (data && data.data && data.data[0] && (data.data[0].message || data.data[0].code)) || ("HTTP " + res.status);
+    throw new Error("Zoho PUT: " + msg);
+  }
+  return data;
+}
 function mapRecord(r, pos) {
   var p = pos[r.id] || {};
   var now = Date.now();
@@ -630,6 +648,65 @@ function makeCard(card, col, i) {
   statusArea.addEventListener("mousedown", function(e) { e.stopPropagation(); });
   statusArea.addEventListener("dragstart", function(e) { e.stopPropagation(); e.preventDefault(); });
   cardEl.appendChild(statusArea);
+
+  // Boton "Enviar a Vaciado" solo en columna espera_f3. Cambia la Etapa
+  // de la Quote en Zoho a "Vaciado" — la tarjeta desaparece del tablero
+  // (filtro Etapa=Diseño deja de matchearla) y queda contada como
+  // terminada en las metricas del reporte semanal.
+  if (col.id === "espera_f3") {
+    var action = document.createElement("div");
+    action.style.cssText = "display:flex;justify-content:flex-end;margin-top:6px;";
+    var sendBtn = document.createElement("button");
+    sendBtn.dataset.confirming = "false";
+    var resetSendBtn = function() {
+      sendBtn.dataset.confirming = "false";
+      sendBtn.textContent = "→ Enviar a Vaciado";
+      sendBtn.style.cssText = "padding:6px 12px;font-size:11px;font-family:JetBrains Mono,monospace;background:#F4F5F7;color:#1A1A2E;border:1px solid #DDD;border-radius:6px;cursor:pointer;letter-spacing:0.05em;font-weight:600;";
+      sendBtn.disabled = false;
+    };
+    resetSendBtn();
+    sendBtn.addEventListener("mousedown", function(e) { e.stopPropagation(); });
+    sendBtn.addEventListener("dragstart", function(e) { e.stopPropagation(); e.preventDefault(); });
+    sendBtn.addEventListener("click", async function(e) {
+      e.stopPropagation();
+      if (sendBtn.disabled) return;
+      if (sendBtn.dataset.confirming !== "true") {
+        sendBtn.dataset.confirming = "true";
+        sendBtn.textContent = "¿Confirmar? click otra vez";
+        sendBtn.style.background = "#FFE5CC";
+        sendBtn.style.borderColor = "#FFAA70";
+        sendBtn.style.color = "#C05C00";
+        setTimeout(function() {
+          if (sendBtn.dataset.confirming === "true") resetSendBtn();
+        }, 4000);
+        return;
+      }
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Enviando...";
+      sendBtn.style.opacity = "0.6";
+      try {
+        await zohoPut("Quotes/" + card.id, { data: [{ Etapa: "Vaciado" }] });
+        logEvent(card, "terminated", {
+          from: card.col, to: "vaciado_zoho",
+          fromStatus: card.status, toStatus: "VACIADO"
+        });
+        cards = cards.filter(function(c) { return c.id !== card.id; });
+        await savePositions();
+        renderBoard();
+      } catch (err) {
+        console.error("Error enviando a Vaciado:", err);
+        sendBtn.disabled = false;
+        sendBtn.style.opacity = "1";
+        sendBtn.textContent = "Error - reintentar";
+        sendBtn.style.background = "#FFE0E0";
+        sendBtn.style.borderColor = "#F5AAAA";
+        sendBtn.style.color = "#CC0000";
+        setTimeout(resetSendBtn, 3000);
+      }
+    });
+    action.appendChild(sendBtn);
+    cardEl.appendChild(action);
+  }
 
   cardEl.addEventListener("dragstart", function(e) { onDragStart(e, card.id); });
   cardEl.addEventListener("dragend", onDragEnd);

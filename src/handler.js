@@ -122,10 +122,19 @@ export default {
     }
 
     if (url.pathname === "/zoho") {
+      if (request.method === "OPTIONS") return new Response(null, {headers:cors});
       const zohoUrl = url.searchParams.get("url");
       if (!zohoUrl) return new Response("Falta url", {status:400, headers:cors});
       const auth = request.headers.get("authorization") || request.headers.get("Authorization");
-      const resp = await fetch(zohoUrl, {method:request.method, headers:auth?{Authorization:auth}:{}});
+      const ct = request.headers.get("content-type");
+      const fwdHeaders = {};
+      if (auth) fwdHeaders.Authorization = auth;
+      if (ct) fwdHeaders["Content-Type"] = ct;
+      const init = {method:request.method, headers:fwdHeaders};
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        init.body = await request.text();
+      }
+      const resp = await fetch(zohoUrl, init);
       const text = await resp.text();
       return new Response(text, {status:resp.status, headers:{...cors,"Content-Type":"application/json"}});
     }
