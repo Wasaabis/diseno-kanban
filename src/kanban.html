@@ -161,22 +161,40 @@ var STATUSES = {
     {id:"CAMBIOS", label:"CAMBIOS", bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"}
   ],
   confirmado:[
-    {id:"ESPERA",      label:"ESPERA",      bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"},
-    {id:"NO IMPRESO",  label:"NO IMPRESO",  bg:"#EFEFEF", color:"#666",    border:"#CCC"},
-    {id:"IMPRIMIENDO", label:"IMPRIMIENDO", bg:"#D0E8FF", color:"#0066CC", border:"#90C4F0"},
-    {id:"REIMPRESION", label:"REIMPRESION", bg:"#FFE0E0", color:"#CC0000", border:"#F5AAAA"},
-    {id:"IMPRESO",     label:"IMPRESO",     bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
-    {id:"NO NECESITA", label:"NO NECESITA", bg:"#EFEFEF", color:"#666",    border:"#CCC"}
+    {id:"ESPERA - GEMA", label:"ESPERA - GEMA", bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"},
+    {id:"ESPERA - MTTO", label:"ESPERA - MTTO", bg:"#FFF3E0", color:"#7C4700", border:"#E0A050"},
+    {id:"NO IMPRESO",    label:"NO IMPRESO",    bg:"#EFEFEF", color:"#666",    border:"#CCC"},
+    {id:"IMPRIMIENDO",   label:"IMPRIMIENDO",   bg:"#D0E8FF", color:"#0066CC", border:"#90C4F0"},
+    {id:"REIMPRESION",   label:"REIMPRESION",   bg:"#FFE0E0", color:"#CC0000", border:"#F5AAAA"},
+    {id:"IMPRESO",       label:"IMPRESO",       bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
+    {id:"NO NECESITA",   label:"NO NECESITA",   bg:"#EFEFEF", color:"#666",    border:"#CCC"}
   ]
 };
 
-// Orden de avance por columna. Pasar de un status a otro con indice MAYOR
-// es avance (resetea statusSince). Indice MENOR o igual es retroceso / lateral
-// (mantiene statusSince — castiga zigzagueos).
+// Orden de avance por columna. Indice MAYOR es avance (resetea statusSince).
+// Indice MENOR o igual es retroceso / lateral (mantiene statusSince — castiga
+// zigzagueos). Statuses con el mismo indice son laterales entre si: cambiar
+// entre ellos no es avance ni retroceso (ej. reclasificar ESPERA-GEMA <-> ESPERA-MTTO).
 var STATUS_ORDER = {
-  diseno:     ["FALTAN DATOS", "AUN NO"],
-  envio:      ["AUN NO", "ENVIADO", "CAMBIOS"],
-  confirmado: ["ESPERA", "NO IMPRESO", "IMPRIMIENDO", "REIMPRESION", "IMPRESO", "NO NECESITA"]
+  diseno: {
+    "FALTAN DATOS": 0,
+    "AUN NO":       1
+  },
+  envio: {
+    "AUN NO":  0,
+    "ENVIADO": 1,
+    "CAMBIOS": 2
+  },
+  confirmado: {
+    "ESPERA - GEMA": 0,
+    "ESPERA - MTTO": 0,
+    "ESPERA":        0, // legacy hasta migrar tarjetas viejas
+    "NO IMPRESO":    1,
+    "IMPRIMIENDO":   2,
+    "REIMPRESION":   3,
+    "IMPRESO":       4,
+    "NO NECESITA":   5
+  }
 };
 
 // Status default cuando una tarjeta entra a una columna por drag&drop.
@@ -200,9 +218,11 @@ function badgeColors(level) {
 var DAY_MS = 24 * 60 * 60 * 1000;
 // Terminales: tarjetas que no se cuentan como estancadas.
 //   IMPRESO/NO NECESITA: el flujo de diseño cerro, esperando boton "Enviar a Vaciado"
-//   ESPERA: pausada por condiciones externas (cliente trae anillo, llega diamante, etc.).
-//           No es culpa del diseñador, no se atasca.
-var TERMINAL_STATES = { confirmado: ["IMPRESO", "NO NECESITA", "ESPERA"] };
+//   ESPERA - GEMA: pausada esperando que llegue una gema/diamante
+//   ESPERA - MTTO: pausada esperando el anillo del cliente para adaptar
+//   ESPERA: legacy (data vieja antes de subdividir) — se elimina tras migracion
+// Ninguna es culpa del diseñador, no se cuentan como atasco.
+var TERMINAL_STATES = { confirmado: ["IMPRESO", "NO NECESITA", "ESPERA - GEMA", "ESPERA - MTTO", "ESPERA"] };
 
 // Semaforo de tiempo. Devuelve null/"warn"/"alert" segun thresholds.
 //   "warn"  = amarillo (heads-up)
@@ -227,9 +247,9 @@ function statusLevel(card) {
 function isStatusAdvance(col, fromStatus, toStatus) {
   var order = STATUS_ORDER[col];
   if (!order) return true;
-  var fi = order.indexOf(fromStatus);
-  var ti = order.indexOf(toStatus);
-  if (fi === -1 || ti === -1) return true;
+  var fi = order[fromStatus];
+  var ti = order[toStatus];
+  if (fi === undefined || ti === undefined) return true;
   return ti > fi;
 }
 

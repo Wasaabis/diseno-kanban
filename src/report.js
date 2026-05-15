@@ -12,10 +12,11 @@ const COL_ACCENT = {
 };
 // Terminales (no cuentan como estancadas):
 //   IMPRESO/NO NECESITA: cerro el flujo de diseño, esperando boton "Enviar a Vaciado".
-//   ESPERA: pausada por condiciones externas (cliente trae anillo, llega diamante).
-//           No es culpa del diseñador.
-// El evento "terminated" lo emite solo el boton.
-const TERMINAL = { confirmado: ["IMPRESO", "NO NECESITA", "ESPERA"] };
+//   ESPERA - GEMA: pausada esperando gema/diamante.
+//   ESPERA - MTTO: pausada esperando el anillo del cliente para adaptar.
+//   ESPERA: legacy (data vieja antes de subdividir).
+// Ninguna es culpa del diseñador. El evento "terminated" lo emite solo el boton.
+const TERMINAL = { confirmado: ["IMPRESO", "NO NECESITA", "ESPERA - GEMA", "ESPERA - MTTO", "ESPERA"] };
 
 function isTerminal(col, status) {
   return (TERMINAL[col] || []).includes(status);
