@@ -3,6 +3,7 @@
   "name": "kanban-disetight-band-76ce",
   "main": "src/handler.js",
   "compatibility_date": "2026-03-20",
+  "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
   },
