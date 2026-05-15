@@ -708,6 +708,57 @@ function makeCard(card, col, i) {
   statusPill.textContent = "⏸ " + dS + "d";
   statusArea.appendChild(statusPill);
 
+  // Boton "copiar link del chat con cliente" en toda tarjeta no terminal.
+  // Pega el link de la pagina del chat al portapapeles para que Armando lo
+  // mande al cliente por WhatsApp. Crea token bajo demanda (idempotente).
+  if (!term) {
+    var linkBtn = document.createElement("button");
+    linkBtn.className = "chat-link-btn";
+    linkBtn.style.cssText = "padding:3px 8px;font-size:10px;font-family:JetBrains Mono,monospace;background:transparent;color:#666;border:1px solid #DDD;border-radius:6px;cursor:pointer;letter-spacing:0.04em;";
+    linkBtn.textContent = "📋 link cliente";
+    linkBtn.title = "Copiar link del chat para mandar al cliente";
+    linkBtn.addEventListener("mousedown", function(e) { e.stopPropagation(); });
+    linkBtn.addEventListener("dragstart", function(e) { e.stopPropagation(); e.preventDefault(); });
+    linkBtn.addEventListener("click", async function(e) {
+      e.stopPropagation();
+      if (linkBtn.disabled) return;
+      linkBtn.disabled = true;
+      linkBtn.textContent = "...";
+      try {
+        var resp = await fetch("https://forever-us-tienda.contacto-ed2.workers.dev/api/admin/token-for-card", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cardId: card.id, nota: card.nota, joyeria: card.joyeria }),
+        });
+        var data = await resp.json();
+        if (!resp.ok || !data.token) throw new Error(data.error || "no token");
+        var url = "https://forever-us-tienda.contacto-ed2.workers.dev/pedido/" + data.token;
+        await navigator.clipboard.writeText(url);
+        linkBtn.textContent = "✓ copiado";
+        linkBtn.style.color = "#1E7E34";
+        linkBtn.style.borderColor = "#1E7E34";
+        setTimeout(function() {
+          linkBtn.textContent = "📋 link cliente";
+          linkBtn.style.color = "#666";
+          linkBtn.style.borderColor = "#DDD";
+          linkBtn.disabled = false;
+        }, 2500);
+      } catch (err) {
+        console.error("link cliente fallo:", err);
+        linkBtn.textContent = "error";
+        linkBtn.style.color = "#CC0000";
+        linkBtn.style.borderColor = "#CC0000";
+        setTimeout(function() {
+          linkBtn.textContent = "📋 link cliente";
+          linkBtn.style.color = "#666";
+          linkBtn.style.borderColor = "#DDD";
+          linkBtn.disabled = false;
+        }, 2500);
+      }
+    });
+    statusArea.appendChild(linkBtn);
+  }
+
   statusArea.addEventListener("mousedown", function(e) { e.stopPropagation(); });
   statusArea.addEventListener("dragstart", function(e) { e.stopPropagation(); e.preventDefault(); });
   cardEl.appendChild(statusArea);
