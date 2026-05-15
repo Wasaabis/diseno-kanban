@@ -31,8 +31,8 @@ header{background:#FFF;border-bottom:1px solid #E8E8F0;padding:14px 28px;display
 .btn-refresh{padding:7px 16px;background:none;border:1px solid #3A86FF44;color:#3A86FF;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:"Open Sans",sans-serif;}
 .btn-settings{padding:7px 12px;background:none;border:1px solid #E0E0E0;color:#AAA;border-radius:6px;cursor:pointer;font-size:13px;}
 .pedidos-count{font-family:"JetBrains Mono",monospace;font-size:9px;color:#CCC;letter-spacing:.1em;}
-#board{display:flex;gap:12px;padding:18px 16px;overflow-x:auto;align-items:flex-start;flex:1;}
-.column{flex:0 0 215px;border-radius:12px;background:#ECEEF2;border:1.5px solid #E0E2EA;display:flex;flex-direction:column;min-height:480px;transition:background .2s,border-color .2s;}
+#board{display:flex;gap:14px;padding:18px 16px;overflow-x:auto;align-items:flex-start;flex:1;}
+.column{flex:1 1 0;min-width:300px;border-radius:12px;background:#ECEEF2;border:1.5px solid #E0E2EA;display:flex;flex-direction:column;min-height:480px;transition:background .2s,border-color .2s;}
 .column.drag-over{border-color:#3A86FF55;background:#3A86FF06;}
 .col-header{padding:13px 13px 0;}
 .col-title-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
@@ -53,7 +53,7 @@ header{background:#FFF;border-bottom:1px solid #E8E8F0;padding:14px 28px;display
 .joyeria-badge{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.12em;font-weight:600;padding:2px 7px;border-radius:3px;}
 .nota-label{font-family:"JetBrains Mono",monospace;font-size:10px;color:#B8860B;font-weight:600;letter-spacing:.06em;}
 .card-modelo1{font-family:"Optima","Candara","Gill Sans",sans-serif;text-transform:uppercase;font-size:12px;font-weight:600;line-height:1.35;color:#1A1A2E;margin-bottom:4px;}
-.card-status-area{margin-top:8px;padding-top:8px;border-top:1px solid #F3F3F3;}
+.card-status-area{margin-top:8px;padding-top:8px;border-top:1px solid #F3F3F3;display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
 .status-btn{background:none;border:none;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:3px;}
 .status-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-family:"JetBrains Mono",monospace;font-size:9px;font-weight:600;white-space:nowrap;}
 .status-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
