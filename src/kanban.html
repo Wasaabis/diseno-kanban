@@ -382,6 +382,7 @@ function mapRecord(r, pos) {
     id:       r.id,
     joyeria:  r.Ubicaci_n_de_Sucursal || "-",
     nota:     r.Subject || "-",
+    clientName: (r.Contact_Name && r.Contact_Name.name) || null,
     col:      p.col    || "diseno",
     status:   p.status || "AUN NO",
     bornAt:   p.bornAt   || now,
@@ -728,7 +729,7 @@ function makeCard(card, col, i) {
         var resp = await fetch("https://forever-us-tienda.contacto-ed2.workers.dev/api/admin/token-for-card", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cardId: card.id, nota: card.nota, joyeria: card.joyeria }),
+          body: JSON.stringify({ cardId: card.id, nota: card.nota, joyeria: card.joyeria, clientName: card.clientName }),
         });
         var data = await resp.json();
         if (!resp.ok || !data.token) throw new Error(data.error || "no token");
