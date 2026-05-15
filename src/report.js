@@ -1,22 +1,19 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
-const COL_ORDER = ["datos_listos", "disenado", "enviado", "confirmado", "impreso", "espera_f3"];
+const COL_ORDER = ["diseno", "envio", "confirmado"];
 const COL_LABELS = {
-  datos_listos: "Datos Listos",
-  disenado: "Diseñado",
-  enviado: "Enviado",
+  diseno: "Diseño",
+  envio: "Envio",
   confirmado: "Confirmado",
-  impreso: "Impreso",
-  espera_f3: "Espera a F3",
 };
 const COL_ACCENT = {
-  datos_listos: "#3A86FF",
-  disenado: "#2ECC71",
-  enviado: "#F4A100",
+  diseno: "#2ECC71",
+  envio: "#F4A100",
   confirmado: "#8B5CF6",
-  impreso: "#EF4444",
-  espera_f3: "#94A3B8",
 };
-const TERMINAL = { impreso: ["IMPRESO", "NO NECESITA"], espera_f3: ["IMPRESO", "NO NECESITA"] };
+// IMPRESO/NO NECESITA en confirmado son terminales: ya cerro el flujo de diseño,
+// solo falta apretar "Enviar a Vaciado" para cerrarla. No se cuentan como
+// estancadas. El evento "terminated" lo emite solo el boton.
+const TERMINAL = { confirmado: ["IMPRESO", "NO NECESITA"] };
 
 function isTerminal(col, status) {
   return (TERMINAL[col] || []).includes(status);

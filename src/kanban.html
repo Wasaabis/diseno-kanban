@@ -145,49 +145,38 @@ var LS_REFRESH = "fu_refresh";
 var LS_POSITIONS = "fu_positions";
 
 var COLUMNS = [
-  {id:"datos_listos", label:"Datos Listos", accent:"#3A86FF"},
-  {id:"disenado",     label:"Disenado",     accent:"#2ECC71"},
-  {id:"enviado",      label:"Enviado",      accent:"#F4A100"},
-  {id:"confirmado",   label:"Confirmado",   accent:"#8B5CF6"},
-  {id:"impreso",      label:"Impreso",      accent:"#EF4444"},
-  {id:"espera_f3",    label:"Espera a F3",  accent:"#94A3B8"}
+  {id:"diseno",     label:"Diseno",     accent:"#2ECC71"},
+  {id:"envio",      label:"Envio",      accent:"#F4A100"},
+  {id:"confirmado", label:"Confirmado", accent:"#8B5CF6"}
 ];
 
 var STATUSES = {
-  datos_listos:[
-    {id:"SI",      label:"SI",         bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
-    {id:"NO",      label:"NO",         bg:"#FFF3CD", color:"#856404", border:"#FFD96A"}
+  diseno:[
+    {id:"FALTAN DATOS", label:"FALTAN DATOS", bg:"#FFE0E0", color:"#CC0000", border:"#F5AAAA"},
+    {id:"AUN NO",       label:"AUN NO",       bg:"#FFF3CD", color:"#856404", border:"#FFD96A"}
   ],
-  disenado:[
-    {id:"DISENADO",label:"DISENADO",   bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
-    {id:"AUN NO",  label:"AUN NO",     bg:"#FFF3CD", color:"#856404", border:"#FFD96A"}
-  ],
-  enviado:[
-    {id:"ENVIADO", label:"ENVIADO",    bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
-    {id:"AUN NO",  label:"AUN NO",     bg:"#FFF3CD", color:"#856404", border:"#FFD96A"}
+  envio:[
+    {id:"AUN NO",  label:"AUN NO",  bg:"#FFF3CD", color:"#856404", border:"#FFD96A"},
+    {id:"ENVIADO", label:"ENVIADO", bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
+    {id:"CAMBIOS", label:"CAMBIOS", bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"}
   ],
   confirmado:[
-    {id:"CAMBIOS",    label:"CAMBIOS",    bg:"#D0E8FF", color:"#0066CC", border:"#90C4F0"},
-    {id:"CONFIRMADO", label:"CONFIRMADO", bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
-    {id:"AUN NO",     label:"AUN NO",     bg:"#FFF3CD", color:"#856404", border:"#FFD96A"}
-  ],
-  impreso:[
+    {id:"NO IMPRESO",  label:"NO IMPRESO",  bg:"#EFEFEF", color:"#666",    border:"#CCC"},
+    {id:"IMPRIMIENDO", label:"IMPRIMIENDO", bg:"#D0E8FF", color:"#0066CC", border:"#90C4F0"},
     {id:"ESPERA",      label:"ESPERA",      bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"},
-    {id:"IMPRESO",     label:"IMPRESO",     bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
-    {id:"NO NECESITA", label:"NO NECESITA", bg:"#EFEFEF", color:"#666",    border:"#CCC"},
     {id:"REIMPRESION", label:"REIMPRESION", bg:"#FFE0E0", color:"#CC0000", border:"#F5AAAA"},
-    {id:"IMPRIMIENDO", label:"IMPRIMIENDO", bg:"#D0E8FF", color:"#0066CC", border:"#90C4F0"}
-  ],
-  espera_f3:[
     {id:"IMPRESO",     label:"IMPRESO",     bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
     {id:"NO NECESITA", label:"NO NECESITA", bg:"#EFEFEF", color:"#666",    border:"#CCC"}
   ]
 };
 
 var STALE_DAYS_DEFAULT = 1;
-var STALE_DAYS_BY_COL = { impreso: 2 };
+var STALE_DAYS_BY_COL = { confirmado: 2 };
 var DAY_MS = 24 * 60 * 60 * 1000;
-var TERMINAL_STATES = { impreso: ["IMPRESO", "NO NECESITA"], espera_f3: ["IMPRESO", "NO NECESITA"] };
+// IMPRESO y NO NECESITA en confirmado son terminales: el flujo de diseño cerro,
+// solo falta apretar el boton "Enviar a Vaciado" para sacarla del tablero.
+// No se marcan como estancadas en kanban ni en el reporte semanal.
+var TERMINAL_STATES = { confirmado: ["IMPRESO", "NO NECESITA"] };
 
 var token = "";
 var cards = [];
@@ -328,8 +317,8 @@ function mapRecord(r, pos) {
     id:       r.id,
     joyeria:  r.Ubicaci_n_de_Sucursal || "-",
     nota:     r.Subject || "-",
-    col:      p.col    || "datos_listos",
-    status:   p.status || "SI",
+    col:      p.col    || "diseno",
+    status:   p.status || "AUN NO",
     bornAt:   p.bornAt   || now,
     colSince: p.colSince || now,
     _justBorn: isNew
@@ -649,11 +638,11 @@ function makeCard(card, col, i) {
   statusArea.addEventListener("dragstart", function(e) { e.stopPropagation(); e.preventDefault(); });
   cardEl.appendChild(statusArea);
 
-  // Boton "Enviar a Vaciado" solo en columna espera_f3. Cambia la Etapa
-  // de la Quote en Zoho a "Vaciado" — la tarjeta desaparece del tablero
-  // (filtro Etapa=Diseño deja de matchearla) y queda contada como
-  // terminada en las metricas del reporte semanal.
-  if (col.id === "espera_f3") {
+  // Boton "Enviar a Vaciado" solo en CONFIRMADO con status IMPRESO o NO NECESITA.
+  // Cambia la Etapa de la Quote en Zoho a "Vaciado" — la tarjeta desaparece del
+  // tablero (filtro Etapa=Diseño deja de matchearla) y queda contada como
+  // terminada en las metricas del reporte semanal. Es la unica via de cierre.
+  if (col.id === "confirmado" && (card.status === "IMPRESO" || card.status === "NO NECESITA")) {
     var action = document.createElement("div");
     action.style.cssText = "display:flex;justify-content:flex-end;margin-top:6px;";
     var sendBtn = document.createElement("button");
@@ -687,7 +676,7 @@ function makeCard(card, col, i) {
       try {
         await zohoPut("Quotes/" + card.id, { data: [{ Etapa: "Vaciado" }] });
         logEvent(card, "terminated", {
-          from: card.col, to: "vaciado_zoho",
+          from: "confirmado", to: "vaciado_zoho",
           fromStatus: card.status, toStatus: "VACIADO"
         });
         cards = cards.filter(function(c) { return c.id !== card.id; });
@@ -746,11 +735,7 @@ function insertCard(card, colId, insertIdx) {
   var prevStatus = card.status;
   var newStatus;
   if (colChanged) {
-    if (prevCol === "espera_f3" && colId === "impreso") {
-      newStatus = "REIMPRESION";
-    } else {
-      newStatus = ((STATUSES[colId]||[])[0] || {id: card.status}).id;
-    }
+    newStatus = ((STATUSES[colId]||[])[0] || {id: card.status}).id;
   } else {
     newStatus = card.status;
   }
@@ -924,15 +909,9 @@ function selectStatus(statusId) {
     if (prevStatus !== statusId) {
       card.status = statusId;
       logEvent(card, "status_change", {from: card.col, to: card.col, fromStatus: prevStatus, toStatus: statusId});
-      if (isTerminal(card)) {
-        logEvent(card, "terminated", {from: card.col, to: card.col, fromStatus: prevStatus, toStatus: statusId});
-      }
-      if (card.col === "impreso" && (statusId === "IMPRESO" || statusId === "NO NECESITA")) {
-        var prevCol = card.col;
-        card.col = "espera_f3";
-        card.colSince = Date.now();
-        logEvent(card, "col_change", {from: prevCol, to: "espera_f3", fromStatus: statusId, toStatus: statusId});
-      }
+      // Nota: isTerminal(card) en CONFIRMADO con IMPRESO/NO NECESITA SOLO afecta
+      // visualizacion (no se marca como estancada). El evento "terminated" NO se
+      // emite aqui — solo el boton "Enviar a Vaciado" cierra la tarjeta.
       savePositions();
       renderBoard();
     }
