@@ -31,6 +31,17 @@ header{background:#FFF;border-bottom:1px solid #E8E8F0;padding:14px 28px;display
 .btn-refresh{padding:7px 16px;background:none;border:1px solid #3A86FF44;color:#3A86FF;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:"Open Sans",sans-serif;}
 .btn-settings{padding:7px 12px;background:none;border:1px solid #E0E0E0;color:#AAA;border-radius:6px;cursor:pointer;font-size:13px;}
 .pedidos-count{font-family:"JetBrains Mono",monospace;font-size:9px;color:#CCC;letter-spacing:.1em;}
+#search-bar{display:flex;gap:10px;align-items:center;padding:10px 16px;background:#FAFAFB;border-bottom:1px solid #E0E2EA;flex-wrap:wrap;}
+#search-input{padding:8px 12px;border:1px solid #DDD;border-radius:8px;font-size:13px;font-family:inherit;min-width:220px;outline:none;background:#fff;}
+#search-input:focus{border-color:#3A86FF;}
+.chips-group{display:flex;gap:5px;flex-wrap:wrap;align-items:center;}
+.chips-group .filter-chip{padding:5px 11px;font-size:11px;font-family:JetBrains Mono,monospace;border-radius:14px;border:1px solid #DDD;background:#fff;color:#666;cursor:pointer;letter-spacing:.04em;font-weight:600;transition:all .12s;}
+.chips-group .filter-chip:hover{border-color:#999;color:#333;}
+.chips-group .filter-chip.active{background:#1A1A2E;color:#fff;border-color:#1A1A2E;}
+.level-chip.active{background:var(--lvbg)!important;color:var(--lvc)!important;border-color:var(--lvbd)!important;}
+#clear-filters{padding:5px 11px;font-size:11px;font-family:JetBrains Mono,monospace;background:transparent;color:#999;border:1px solid transparent;border-radius:14px;cursor:pointer;}
+#clear-filters:hover{color:#CC0000;}
+.search-count{font-size:11px;font-family:JetBrains Mono,monospace;color:#666;margin-left:auto;letter-spacing:.04em;}
 #board{display:flex;gap:14px;padding:18px 16px;overflow-x:auto;align-items:flex-start;flex:1;}
 .column{flex:1 1 0;min-width:300px;border-radius:12px;background:#ECEEF2;border:1.5px solid #E0E2EA;display:flex;flex-direction:column;min-height:480px;transition:background .2s,border-color .2s;}
 .column.drag-over{border-color:#3A86FF55;background:#3A86FF06;}
@@ -126,6 +137,17 @@ footer{background:#FFF;border-top:1px solid #EBEBEB;padding:8px 28px;display:fle
       <span id="pedidosCount" class="pedidos-count"></span>
     </div>
   </header>
+  <div id="search-bar">
+    <input type="text" id="search-input" placeholder="Buscar nota (N12345)..." autocomplete="off">
+    <div class="chips-group" id="joyeria-chips"></div>
+    <div class="chips-group level-group">
+      <button type="button" class="filter-chip level-chip" data-level="green" style="--lvbg:#D4EDDA;--lvbd:#A8D5B5;--lvc:#1E7E34">🟢 Al dia</button>
+      <button type="button" class="filter-chip level-chip" data-level="warn"  style="--lvbg:#FFF3CD;--lvbd:#FFD96A;--lvc:#856404">🟡 Heads-up</button>
+      <button type="button" class="filter-chip level-chip" data-level="alert" style="--lvbg:#FFE0E0;--lvbd:#F5AAAA;--lvc:#CC0000">🔴 Atrasada</button>
+    </div>
+    <button type="button" id="clear-filters">Limpiar</button>
+    <span id="search-count" class="search-count"></span>
+  </div>
   <div id="board"></div>
   <footer>
     <span class="footer-text">FOREVER US DISENO INTERNO</span>
@@ -456,6 +478,8 @@ function showApp() {
   document.getElementById("spinner").style.display = "none";
   document.getElementById("login").style.display = "none";
   document.getElementById("app").style.display = "flex";
+  setupSearchBar();
+  renderJoyeriaChips();
   renderBoard();
   if (!window._staleTimer) {
     window._staleTimer = setInterval(renderBoard, 30 * 60 * 1000);
@@ -494,6 +518,7 @@ document.getElementById("refreshBtn").addEventListener("click", async function()
     var pos = await loadPositions();
     cards = (data.data || []).map(function(r) { return mapRecord(r, pos); });
     emitBornEvents(cards);
+    renderJoyeriaChips();
     renderBoard();
   } catch(e) {
     var el = document.getElementById("errorMsg");
@@ -513,11 +538,91 @@ document.getElementById("logoutBtn").addEventListener("click", function() {
 document.getElementById("backdrop").addEventListener("click", closeDropdown);
 
 /* RENDER */
+// Filtros globales del search-bar (texto, joyeria, semaforo)
+var search = { text: "", joyerias: new Set(), levels: new Set() };
+
+function cardMatches(c) {
+  if (search.text) {
+    var t = search.text.toLowerCase();
+    var nota = (c.nota || "").toLowerCase();
+    var joy  = (c.joyeria || "").toLowerCase();
+    if (nota.indexOf(t) === -1 && joy.indexOf(t) === -1) return false;
+  }
+  if (search.joyerias.size > 0 && !search.joyerias.has(c.joyeria)) return false;
+  if (search.levels.size > 0) {
+    var term = isTerminal(c);
+    var tL = term ? null : totalLevel(c);
+    var sL = term ? null : statusLevel(c);
+    var cardLevels = new Set([tL || "green", sL || "green"]);
+    var hit = false;
+    search.levels.forEach(function(l) { if (cardLevels.has(l)) hit = true; });
+    if (!hit) return false;
+  }
+  return true;
+}
+
 function getColCards(colId) {
-  var all = cards.filter(function(c) { return c.col === colId; });
+  var all = cards.filter(function(c) { return c.col === colId && cardMatches(c); });
   var active = filters[colId];
   if (!active || active.size === 0) return all;
   return all.filter(function(c) { return active.has(c.status); });
+}
+
+function renderJoyeriaChips() {
+  var container = document.getElementById("joyeria-chips");
+  if (!container) return;
+  var unique = {};
+  cards.forEach(function(c) { if (c.joyeria && c.joyeria !== "-") unique[c.joyeria] = true; });
+  var sorted = Object.keys(unique).sort();
+  container.innerHTML = "";
+  sorted.forEach(function(j) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "filter-chip" + (search.joyerias.has(j) ? " active" : "");
+    btn.textContent = j;
+    btn.addEventListener("click", function() {
+      if (search.joyerias.has(j)) search.joyerias.delete(j);
+      else search.joyerias.add(j);
+      renderJoyeriaChips();
+      renderBoard();
+    });
+    container.appendChild(btn);
+  });
+}
+
+function updateSearchCount() {
+  var el = document.getElementById("search-count");
+  if (!el) return;
+  var hasFilter = search.text || search.joyerias.size > 0 || search.levels.size > 0;
+  if (!hasFilter) { el.textContent = ""; return; }
+  var matched = cards.filter(cardMatches).length;
+  el.textContent = matched + " de " + cards.length;
+}
+
+function setupSearchBar() {
+  var input = document.getElementById("search-input");
+  if (!input) return;
+  input.addEventListener("input", function(e) {
+    search.text = e.target.value.trim();
+    renderBoard();
+  });
+  document.querySelectorAll(".level-chip").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      var l = btn.dataset.level;
+      if (search.levels.has(l)) { search.levels.delete(l); btn.classList.remove("active"); }
+      else { search.levels.add(l); btn.classList.add("active"); }
+      renderBoard();
+    });
+  });
+  document.getElementById("clear-filters").addEventListener("click", function() {
+    search.text = "";
+    search.joyerias.clear();
+    search.levels.clear();
+    input.value = "";
+    document.querySelectorAll(".level-chip").forEach(function(b) { b.classList.remove("active"); });
+    renderJoyeriaChips();
+    renderBoard();
+  });
 }
 function getStatusDef(colId, statusId) {
   var list = STATUSES[colId] || [];
@@ -537,6 +642,7 @@ function renderBoard() {
     badgesEl.appendChild(span);
   });
   document.getElementById("pedidosCount").textContent = cards.length + " pedidos";
+  updateSearchCount();
 
   var board = document.getElementById("board");
   board.innerHTML = "";
