@@ -161,22 +161,77 @@ var STATUSES = {
     {id:"CAMBIOS", label:"CAMBIOS", bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"}
   ],
   confirmado:[
+    {id:"ESPERA",      label:"ESPERA",      bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"},
     {id:"NO IMPRESO",  label:"NO IMPRESO",  bg:"#EFEFEF", color:"#666",    border:"#CCC"},
     {id:"IMPRIMIENDO", label:"IMPRIMIENDO", bg:"#D0E8FF", color:"#0066CC", border:"#90C4F0"},
-    {id:"ESPERA",      label:"ESPERA",      bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"},
     {id:"REIMPRESION", label:"REIMPRESION", bg:"#FFE0E0", color:"#CC0000", border:"#F5AAAA"},
     {id:"IMPRESO",     label:"IMPRESO",     bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
     {id:"NO NECESITA", label:"NO NECESITA", bg:"#EFEFEF", color:"#666",    border:"#CCC"}
   ]
 };
 
-var STALE_DAYS_DEFAULT = 1;
-var STALE_DAYS_BY_COL = { confirmado: 2 };
+// Orden de avance por columna. Pasar de un status a otro con indice MAYOR
+// es avance (resetea statusSince). Indice MENOR o igual es retroceso / lateral
+// (mantiene statusSince — castiga zigzagueos).
+var STATUS_ORDER = {
+  diseno:     ["FALTAN DATOS", "AUN NO"],
+  envio:      ["AUN NO", "ENVIADO", "CAMBIOS"],
+  confirmado: ["ESPERA", "NO IMPRESO", "IMPRIMIENDO", "REIMPRESION", "IMPRESO", "NO NECESITA"]
+};
+
+// Status default cuando una tarjeta entra a una columna por drag&drop.
+// Distinto al primero del array de STATUSES (que define el orden visual de los chips).
+// Ej: en confirmado los chips empiezan con ESPERA, pero al arrastrar una nota
+// a confirmado el status logico es NO IMPRESO (lista para producir).
+var DEFAULT_STATUS = {
+  diseno: "AUN NO",
+  envio: "AUN NO",
+  confirmado: "NO IMPRESO"
+};
+
+// Paleta del semaforo de tiempo (badges).
+function badgeColors(level) {
+  if (level === "alert")   return {bg:"#FFE0E0", border:"#F5AAAA", color:"#CC0000"}; // rojo
+  if (level === "warn")    return {bg:"#FFF3CD", border:"#FFD96A", color:"#856404"}; // amarillo
+  if (level === "neutral") return {bg:"#EFEFEF", border:"#CCC",    color:"#666"};    // gris (terminal)
+  return                        {bg:"#D4EDDA", border:"#A8D5B5", color:"#1E7E34"};   // verde
+}
+
 var DAY_MS = 24 * 60 * 60 * 1000;
-// IMPRESO y NO NECESITA en confirmado son terminales: el flujo de diseño cerro,
-// solo falta apretar el boton "Enviar a Vaciado" para sacarla del tablero.
-// No se marcan como estancadas en kanban ni en el reporte semanal.
-var TERMINAL_STATES = { confirmado: ["IMPRESO", "NO NECESITA"] };
+// Terminales: tarjetas que no se cuentan como estancadas.
+//   IMPRESO/NO NECESITA: el flujo de diseño cerro, esperando boton "Enviar a Vaciado"
+//   ESPERA: pausada por condiciones externas (cliente trae anillo, llega diamante, etc.).
+//           No es culpa del diseñador, no se atasca.
+var TERMINAL_STATES = { confirmado: ["IMPRESO", "NO NECESITA", "ESPERA"] };
+
+// Semaforo de tiempo. Devuelve null/"warn"/"alert" segun thresholds.
+//   "warn"  = amarillo (heads-up)
+//   "alert" = rojo (urgente)
+//
+// Vida total (dias desde bornAt):       0-4 verde · 5-8 amarillo · >8 rojo
+// Tiempo en status actual (statusSince): 0-2 verde · 3-4 amarillo · >4 rojo
+function totalLevel(card) {
+  if (isTerminal(card)) return null;
+  var d = daysTotal(card);
+  if (d > 8) return "alert";
+  if (d >= 5) return "warn";
+  return null;
+}
+function statusLevel(card) {
+  if (isTerminal(card)) return null;
+  var d = daysInStatus(card);
+  if (d > 4) return "alert";
+  if (d >= 3) return "warn";
+  return null;
+}
+function isStatusAdvance(col, fromStatus, toStatus) {
+  var order = STATUS_ORDER[col];
+  if (!order) return true;
+  var fi = order.indexOf(fromStatus);
+  var ti = order.indexOf(toStatus);
+  if (fi === -1 || ti === -1) return true;
+  return ti > fi;
+}
 
 var token = "";
 var cards = [];
@@ -184,9 +239,6 @@ var filters = {};
 var draggingId = null;
 var dropdownCardId = null;
 
-function staleThreshold(colId) {
-  return STALE_DAYS_BY_COL[colId] || STALE_DAYS_DEFAULT;
-}
 function isTerminal(card) {
   var list = TERMINAL_STATES[card.col] || [];
   return list.indexOf(card.status) !== -1;
@@ -195,17 +247,10 @@ function daysTotal(card) {
   if (!card.bornAt) return 0;
   return Math.floor((Date.now() - card.bornAt) / DAY_MS);
 }
-function daysInCol(card) {
-  if (!card.colSince) return 0;
-  return Math.floor((Date.now() - card.colSince) / DAY_MS);
-}
-function staleLevel(card) {
-  if (isTerminal(card)) return null;
-  var th = staleThreshold(card.col);
-  var d = daysTotal(card);
-  if (d >= th * 2) return "alert";
-  if (d >= th) return "warn";
-  return null;
+function daysInStatus(card) {
+  var since = card.statusSince || card.colSince || card.bornAt;
+  if (!since) return 0;
+  return Math.floor((Date.now() - since) / DAY_MS);
 }
 
 /* TOKEN */
@@ -258,7 +303,7 @@ function logEvent(card, type, extras) {
 /* POSITIONS */
 async function savePositions() {
   var pos = {};
-  cards.forEach(function(c) { pos[c.id] = {col: c.col, status: c.status, bornAt: c.bornAt, colSince: c.colSince, joyeria: c.joyeria, nota: c.nota}; });
+  cards.forEach(function(c) { pos[c.id] = {col: c.col, status: c.status, bornAt: c.bornAt, colSince: c.colSince, statusSince: c.statusSince, joyeria: c.joyeria, nota: c.nota}; });
   var json = JSON.stringify(pos);
   localStorage.setItem(LS_POSITIONS, json);
   try {
@@ -321,6 +366,9 @@ function mapRecord(r, pos) {
     status:   p.status || "AUN NO",
     bornAt:   p.bornAt   || now,
     colSince: p.colSince || now,
+    // statusSince: si no existe (data vieja), arrancar desde colSince — la tarjeta
+    // ya llevaba ese tiempo en su status actual implicitamente.
+    statusSince: p.statusSince || p.colSince || now,
     _justBorn: isNew
   };
 }
@@ -567,9 +615,6 @@ function makeCard(card, col, i) {
 
   var cardEl = document.createElement("div");
   cardEl.className = "card";
-  var sLevel = staleLevel(card);
-  if (sLevel === "warn") cardEl.classList.add("stale-warn-card");
-  else if (sLevel === "alert") cardEl.classList.add("stale-alert-card");
   cardEl.dataset.id = card.id;
   cardEl.draggable = true;
   cardEl.style.animationDelay = (i * 0.04) + "s";
@@ -617,22 +662,31 @@ function makeCard(card, col, i) {
   });
   statusArea.appendChild(btn);
 
-  if (!isTerminal(card)) {
-    var dT = daysTotal(card);
-    var dC = daysInCol(card);
-    if (sLevel) {
-      var stale = document.createElement("span");
-      stale.className = "stale-pill " + (sLevel === "alert" ? "stale-alert" : "stale-warn");
-      stale.title = "Edad total en tablero: " + dT + "d · en esta fase: " + dC + "d";
-      stale.textContent = "⏱ " + dT + "d";
-      statusArea.appendChild(stale);
-    }
-    var sub = document.createElement("span");
-    sub.className = "stale-sub" + (dC >= 2 ? " col-warn" : "");
-    sub.title = "Edad total: " + dT + "d · en esta fase: " + dC + "d" + (dC >= 2 ? " (lleva tiempo sin moverse)" : "");
-    sub.textContent = dC + "d aqui";
-    statusArea.appendChild(sub);
-  }
+  // Semaforo de tiempo: dos badges siempre visibles, color segun nivel.
+  //   ⏱ vida total (desde bornAt) — verde 0-4 / amarillo 5-8 / rojo >8
+  //   ⏸ tiempo en status actual (desde statusSince) — verde 0-2 / amarillo 3-4 / rojo >4
+  // Terminales (IMPRESO/NO NECESITA/ESPERA en confirmado) van en gris neutro.
+  var dT = daysTotal(card);
+  var dS = daysInStatus(card);
+  var term = isTerminal(card);
+  var tL = term ? null : totalLevel(card);
+  var sL = term ? null : statusLevel(card);
+  var tCol = badgeColors(term ? "neutral" : tL);
+  var sCol = badgeColors(term ? "neutral" : sL);
+
+  var totalPill = document.createElement("span");
+  totalPill.className = "stale-pill";
+  totalPill.style.cssText = "background:" + tCol.bg + ";border:1px solid " + tCol.border + ";color:" + tCol.color;
+  totalPill.title = "Vida total en el tablero";
+  totalPill.textContent = "⏱ " + dT + "d";
+  statusArea.appendChild(totalPill);
+
+  var statusPill = document.createElement("span");
+  statusPill.className = "stale-sub";
+  statusPill.style.cssText = "background:" + sCol.bg + ";border:1px solid " + sCol.border + ";color:" + sCol.color + ";padding:2px 6px;border-radius:6px;font-size:11px;font-family:JetBrains Mono,monospace;font-weight:600;letter-spacing:0.04em;";
+  statusPill.title = "Tiempo en este status (col + status)";
+  statusPill.textContent = "⏸ " + dS + "d";
+  statusArea.appendChild(statusPill);
 
   statusArea.addEventListener("mousedown", function(e) { e.stopPropagation(); });
   statusArea.addEventListener("dragstart", function(e) { e.stopPropagation(); e.preventDefault(); });
@@ -735,7 +789,7 @@ function insertCard(card, colId, insertIdx) {
   var prevStatus = card.status;
   var newStatus;
   if (colChanged) {
-    newStatus = ((STATUSES[colId]||[])[0] || {id: card.status}).id;
+    newStatus = DEFAULT_STATUS[colId] || ((STATUSES[colId]||[])[0] || {id: card.status}).id;
   } else {
     newStatus = card.status;
   }
@@ -743,11 +797,11 @@ function insertCard(card, colId, insertIdx) {
   card.col = colId;
   card.status = newStatus;
   if (colChanged) {
-    card.colSince = Date.now();
+    var now = Date.now();
+    card.colSince = now;
+    card.statusSince = now;
     logEvent(card, "col_change", {from: prevCol, to: colId, fromStatus: prevStatus, toStatus: newStatus});
-    if (isTerminal(card)) {
-      logEvent(card, "terminated", {from: prevCol, to: colId, fromStatus: prevStatus, toStatus: newStatus});
-    }
+    // No emitir terminated aqui — la unica via de cierre es el boton "Enviar a Vaciado".
   }
   var colCards = rest.filter(function(c) { return c.col === colId; });
   if (insertIdx < 0 || insertIdx >= colCards.length) colCards.push(card);
@@ -907,11 +961,14 @@ function selectStatus(statusId) {
   if (card) {
     var prevStatus = card.status;
     if (prevStatus !== statusId) {
+      // Solo resetear statusSince si el cambio es AVANCE (hacia adelante en STATUS_ORDER).
+      // Si es retroceso o lateral, mantener el contador — castigar zigzagueo.
+      if (isStatusAdvance(card.col, prevStatus, statusId)) {
+        card.statusSince = Date.now();
+      }
       card.status = statusId;
       logEvent(card, "status_change", {from: card.col, to: card.col, fromStatus: prevStatus, toStatus: statusId});
-      // Nota: isTerminal(card) en CONFIRMADO con IMPRESO/NO NECESITA SOLO afecta
-      // visualizacion (no se marca como estancada). El evento "terminated" NO se
-      // emite aqui — solo el boton "Enviar a Vaciado" cierra la tarjeta.
+      // No emitir terminated automatico — solo el boton "Enviar a Vaciado" cierra.
       savePositions();
       renderBoard();
     }

@@ -10,10 +10,12 @@ const COL_ACCENT = {
   envio: "#F4A100",
   confirmado: "#8B5CF6",
 };
-// IMPRESO/NO NECESITA en confirmado son terminales: ya cerro el flujo de diseño,
-// solo falta apretar "Enviar a Vaciado" para cerrarla. No se cuentan como
-// estancadas. El evento "terminated" lo emite solo el boton.
-const TERMINAL = { confirmado: ["IMPRESO", "NO NECESITA"] };
+// Terminales (no cuentan como estancadas):
+//   IMPRESO/NO NECESITA: cerro el flujo de diseño, esperando boton "Enviar a Vaciado".
+//   ESPERA: pausada por condiciones externas (cliente trae anillo, llega diamante).
+//           No es culpa del diseñador.
+// El evento "terminated" lo emite solo el boton.
+const TERMINAL = { confirmado: ["IMPRESO", "NO NECESITA", "ESPERA"] };
 
 function isTerminal(col, status) {
   return (TERMINAL[col] || []).includes(status);
