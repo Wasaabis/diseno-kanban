@@ -1,5 +1,5 @@
 import KANBAN_HTML from "./kanban.html";
-import { renderReport } from "./report.js";
+import { renderReport, generateAndSaveNarrative } from "./report.js";
 
 function friWeekKey(ts) {
   const mx = new Date(ts - 6 * 60 * 60 * 1000);
@@ -12,6 +12,18 @@ function friWeekKey(ts) {
 }
 
 export default {
+  // Cron: viernes 14:00 UTC = 8am Mty (Mexico no aplica DST desde 2022, UTC-6 fijo).
+  // En ese momento la semana que acaba de cerrar es la que empezo el viernes anterior:
+  // resto 24h al timestamp para caer en jueves y friWeekKey devuelve la llave correcta.
+  async scheduled(_event, env, ctx) {
+    const targetKey = friWeekKey(Date.now() - 24 * 60 * 60 * 1000);
+    ctx.waitUntil(
+      generateAndSaveNarrative(env, targetKey).catch(err => {
+        console.error("scheduled narrative failed:", err?.message || err);
+      })
+    );
+  },
+
   async fetch(request, env) {
     const cors = {
       "Access-Control-Allow-Origin": "*",
@@ -62,6 +74,26 @@ export default {
       const week = url.searchParams.get("week") || "";
       const html = await renderReport(env, week);
       return new Response(html, {headers:{"Content-Type":"text/html;charset=UTF-8"}});
+    }
+
+    // Backfill / regen manual. Mario lo dispara desde terminal:
+    //   curl -X POST "https://<worker>/report/generate?week=20260508&force=1"
+    // Sin week: usa la semana que acaba de cerrar (Vie pasado).
+    if (url.pathname === "/report/generate" && request.method === "POST") {
+      const force = url.searchParams.get("force") === "1";
+      const week = url.searchParams.get("week") || friWeekKey(Date.now() - 24*60*60*1000);
+      if (!force) {
+        const existing = await env.KV.get("report:" + week);
+        if (existing) {
+          return new Response(JSON.stringify({ok:true, week, skipped:"already_exists", narrative:existing}), {headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+        }
+      }
+      try {
+        const result = await generateAndSaveNarrative(env, week);
+        return new Response(JSON.stringify({ok:true, ...result}), {headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+      } catch (err) {
+        return new Response(JSON.stringify({ok:false, week, error:String(err?.message || err)}), {status:500, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+      }
     }
 
     if (url.pathname === "/events" && request.method === "POST") {

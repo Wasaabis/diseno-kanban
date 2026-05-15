@@ -239,6 +239,76 @@ ${narrativeHTML}
 </html>`;
 }
 
+// ── Narrativa automática (cron de los viernes) ────────────────────────────
+//
+// Llama a la API de Anthropic con un resumen estructurado de la semana y
+// guarda el párrafo resultante en KV bajo "report:<weekKey>". Se ejecuta
+// desde el scheduled handler los viernes a las 14:00 UTC = 8am Mty.
+
+import Anthropic from "@anthropic-ai/sdk";
+
+const NARRATIVE_SYSTEM_PROMPT = "Eres analista de un kanban de diseño de joyería Forever Us. Escribe un resumen narrativo de la semana en español, 4-6 oraciones, tono directo y claro, dirigido al equipo. Sin emojis ni listas. Destaca: dinámica entrada vs terminadas, tiempo de ciclo, tarjetas estancadas críticas (si las hay), y cierra con un \"siguiente foco\" concreto.";
+
+function buildContextText({ weekLabelStr, metrics, stuck, snapshot }) {
+  const stuckTop = stuck.slice(0, 6).map(s =>
+    `- "${s.nota}" (${s.joyeria}) — ${s.daysTotal}d totales, ${s.daysInCol}d en ${COL_LABELS[s.col] || s.col}/${s.status}`
+  ).join("\n") || "- (nada estancado)";
+
+  const snapLines = COL_ORDER.map(c => {
+    const s = snapshot[c] || { count: 0, avgAge: "0.0" };
+    return `- ${COL_LABELS[c]}: ${s.count} tarjeta(s), edad promedio ${s.avgAge}d`;
+  }).join("\n");
+
+  return `Datos de la semana ${weekLabelStr}:
+- Nacieron: ${metrics.born}
+- Terminaron: ${metrics.terminated}
+- Neto: ${metrics.net} (positivo = backlog crece)
+- Movimientos: ${metrics.moves} (${metrics.forward} avances, ${metrics.backward} retrocesos)
+- Lead time (de terminadas nacidas esta semana): promedio ${fmt1(metrics.leads.avg)}d, mediana ${fmt1(metrics.leads.median)}d, P90 ${fmt1(metrics.leads.p90)}d, muestra ${metrics.leads.count}
+
+Estancadas (top por edad):
+${stuckTop}
+
+Snapshot actual por columna:
+${snapLines}`;
+}
+
+async function callClaudeHaiku(apiKey, contextText) {
+  const client = new Anthropic({ apiKey });
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 500,
+    system: NARRATIVE_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: contextText }],
+  });
+  for (const block of response.content) {
+    if (block.type === "text") {
+      const text = block.text?.trim();
+      if (text) return text;
+    }
+  }
+  throw new Error("Respuesta sin texto");
+}
+
+export async function generateAndSaveNarrative(env, weekKey) {
+  if (!env.ANTHROPIC_API_KEY) throw new Error("Falta secret ANTHROPIC_API_KEY");
+  const [events, positionsRaw] = await Promise.all([
+    env.KV.get("events:" + weekKey),
+    env.KV.get("positions"),
+  ]);
+  const parsedEvents = events ? JSON.parse(events) : [];
+  const positions = positionsRaw ? JSON.parse(positionsRaw) : {};
+  const ctx = buildContextText({
+    weekLabelStr: weekLabel(weekKey),
+    metrics: computeMetrics(parsedEvents),
+    stuck: computeStuck(positions),
+    snapshot: computeSnapshot(positions),
+  });
+  const narrative = await callClaudeHaiku(env.ANTHROPIC_API_KEY, ctx);
+  await env.KV.put("report:" + weekKey, narrative);
+  return { weekKey, narrative };
+}
+
 export async function renderReport(env, requestedWeek) {
   const list = await env.KV.list({ prefix: "events:" });
   const weeks = list.keys.map(k => k.name.replace("events:", "")).sort().reverse();
