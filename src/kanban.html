@@ -228,20 +228,20 @@ var TERMINAL_STATES = { confirmado: ["IMPRESO", "NO NECESITA", "ESPERA - GEMA", 
 //   "warn"  = amarillo (heads-up)
 //   "alert" = rojo (urgente)
 //
-// Vida total (dias desde bornAt):       0-4 verde · 5-8 amarillo · >8 rojo
-// Tiempo en status actual (statusSince): 0-2 verde · 3-4 amarillo · >4 rojo
+// Vida total (dias desde bornAt):        0-7 verde · 8-12 amarillo · >12 rojo
+// Tiempo en status actual (statusSince): 0-3 verde · 4-5 amarillo · >5 rojo
 function totalLevel(card) {
   if (isTerminal(card)) return null;
   var d = daysTotal(card);
-  if (d > 8) return "alert";
-  if (d >= 5) return "warn";
+  if (d > 12) return "alert";
+  if (d > 7)  return "warn";
   return null;
 }
 function statusLevel(card) {
   if (isTerminal(card)) return null;
   var d = daysInStatus(card);
-  if (d > 4) return "alert";
-  if (d >= 3) return "warn";
+  if (d > 5) return "alert";
+  if (d > 3) return "warn";
   return null;
 }
 function isStatusAdvance(col, fromStatus, toStatus) {
