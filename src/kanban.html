@@ -850,17 +850,10 @@ function makeCard(card, col, i) {
   statusPill.textContent = "⏸ " + dS + "d";
   statusArea.appendChild(statusPill);
 
-  // Boton "copiar link del chat con cliente" en toda tarjeta no terminal.
-  // Pega el link de la pagina del chat al portapapeles para que Armando lo
-  // mande al cliente por WhatsApp. Crea token bajo demanda (idempotente).
+  // Boton "abrir chat con cliente" en toda tarjeta no terminal.
+  // El cliente accede al chat desde el portal (footer "Mi pedido" en la tienda),
+  // no necesitamos copiar link. Solo Armando abre la conversacion para responder.
   if (!term) {
-    var linkBtn = document.createElement("button");
-    linkBtn.className = "chat-link-btn";
-    linkBtn.style.cssText = "padding:3px 8px;font-size:10px;font-family:JetBrains Mono,monospace;background:transparent;color:#666;border:1px solid #DDD;border-radius:6px;cursor:pointer;letter-spacing:0.04em;";
-    linkBtn.textContent = "📋 link cliente";
-    linkBtn.title = "Copiar link del chat para mandar al cliente";
-    linkBtn.addEventListener("mousedown", function(e) { e.stopPropagation(); });
-    linkBtn.addEventListener("dragstart", function(e) { e.stopPropagation(); e.preventDefault(); });
     // Helper: asegura que tenemos un token en chatSummary[card.id], generandolo
     // bajo demanda con un solo fetch que ademas extrae Phone del Contact si toca.
     async function ensureToken() {
@@ -884,38 +877,6 @@ function makeCard(card, col, i) {
       chatSummary[card.id].token = data.token;
       return data.token;
     }
-    linkBtn.addEventListener("click", async function(e) {
-      e.stopPropagation();
-      if (linkBtn.disabled) return;
-      linkBtn.disabled = true;
-      linkBtn.textContent = "...";
-      try {
-        var token = await ensureToken();
-        var url = "https://forever-us-tienda.contacto-ed2.workers.dev/pedido/" + token;
-        await navigator.clipboard.writeText(url);
-        linkBtn.textContent = "✓ copiado";
-        linkBtn.style.color = "#1E7E34";
-        linkBtn.style.borderColor = "#1E7E34";
-        setTimeout(function() {
-          linkBtn.textContent = "📋 link cliente";
-          linkBtn.style.color = "#666";
-          linkBtn.style.borderColor = "#DDD";
-          linkBtn.disabled = false;
-        }, 2500);
-      } catch (err) {
-        console.error("link cliente fallo:", err);
-        linkBtn.textContent = "error";
-        linkBtn.style.color = "#CC0000";
-        linkBtn.style.borderColor = "#CC0000";
-        setTimeout(function() {
-          linkBtn.textContent = "📋 link cliente";
-          linkBtn.style.color = "#666";
-          linkBtn.style.borderColor = "#DDD";
-          linkBtn.disabled = false;
-        }, 2500);
-      }
-    });
-    statusArea.appendChild(linkBtn);
 
     // Boton "abrir chat" (entra como staff de diseno, marca como leido al abrir)
     var chatBtn = document.createElement("button");
