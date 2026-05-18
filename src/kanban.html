@@ -406,6 +406,7 @@ function mapRecord(r, pos) {
     id:       r.id,
     joyeria:  r.Ubicaci_n_de_Sucursal || "-",
     nota:     r.Subject || "-",
+    fase:     r.Fases || null,
     clientName: (r.Contact_Name && r.Contact_Name.name) || null,
     contactId:  (r.Contact_Name && r.Contact_Name.id) || null,
     col:      p.col    || "diseno",
@@ -787,6 +788,28 @@ function makeCard(card, col, i) {
   nota.textContent = card.nota;
   ch.appendChild(badge);
   ch.appendChild(nota);
+  // Pill de Fase Zoho (1/2/3). Fase 4 = ya fabricado en tienda, Fase 5 = entregado:
+  // esas no deberian aparecer aqui (filtro Etapa=Diseño), pero si llegaran a salir
+  // se muestran igual para detectar incongruencias.
+  if (card.fase) {
+    var faseNum = (card.fase.match(/(\d)/) || [])[1];
+    if (faseNum) {
+      var fasePill = document.createElement("span");
+      fasePill.className = "fase-pill";
+      var faseColors = {
+        "1": {bg:"#FEF3C7", border:"#FCD34D", color:"#92400E"},  // amarillo claro
+        "2": {bg:"#E0E7FF", border:"#A5B4FC", color:"#3730A3"},  // indigo claro
+        "3": {bg:"#D1FAE5", border:"#6EE7B7", color:"#065F46"},  // verde
+        "4": {bg:"#FECACA", border:"#F87171", color:"#991B1B"},  // rojo (no deberia)
+        "5": {bg:"#FECACA", border:"#F87171", color:"#991B1B"}   // rojo (no deberia)
+      };
+      var fc = faseColors[faseNum] || {bg:"#F3F4F6", border:"#D1D5DB", color:"#374151"};
+      fasePill.style.cssText = "background:" + fc.bg + ";border:1px solid " + fc.border + ";color:" + fc.color + ";padding:1px 6px;border-radius:6px;font-size:10px;font-family:JetBrains Mono,monospace;font-weight:700;letter-spacing:0.04em;margin-left:6px;";
+      fasePill.textContent = "F" + faseNum;
+      fasePill.title = card.fase;
+      ch.appendChild(fasePill);
+    }
+  }
   // Dot rojo si hay mensajes del cliente sin leer
   var summary = chatSummary[card.id];
   if (summary && summary.unread > 0) {
