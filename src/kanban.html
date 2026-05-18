@@ -40,6 +40,7 @@ header{background:#FFF;border-bottom:1px solid #E8E8F0;padding:14px 28px;display
 .chips-group .filter-chip:hover{border-color:#999;color:#333;}
 .chips-group .filter-chip.active{background:#1A1A2E;color:#fff;border-color:#1A1A2E;}
 .level-chip.active{background:var(--lvbg)!important;color:var(--lvc)!important;border-color:var(--lvbd)!important;}
+.fase-chip.active{background:var(--lvbg)!important;color:var(--lvc)!important;border-color:var(--lvbd)!important;}
 #clear-filters{padding:5px 11px;font-size:11px;font-family:JetBrains Mono,monospace;background:transparent;color:#999;border:1px solid transparent;border-radius:14px;cursor:pointer;}
 #clear-filters:hover{color:#CC0000;}
 .search-count{font-size:11px;font-family:JetBrains Mono,monospace;color:#666;margin-left:auto;letter-spacing:.04em;}
@@ -142,6 +143,11 @@ footer{background:#FFF;border-top:1px solid #EBEBEB;padding:8px 28px;display:fle
   <div id="search-bar">
     <input type="text" id="search-input" placeholder="Buscar nota (N12345)..." autocomplete="off">
     <div class="chips-group" id="joyeria-chips"></div>
+    <div class="chips-group fase-group">
+      <button type="button" class="filter-chip fase-chip" data-fase="1" style="--lvbg:#FEF3C7;--lvbd:#FCD34D;--lvc:#92400E">F1</button>
+      <button type="button" class="filter-chip fase-chip" data-fase="2" style="--lvbg:#E0E7FF;--lvbd:#A5B4FC;--lvc:#3730A3">F2</button>
+      <button type="button" class="filter-chip fase-chip" data-fase="3" style="--lvbg:#D1FAE5;--lvbd:#6EE7B7;--lvc:#065F46">F3</button>
+    </div>
     <div class="chips-group level-group">
       <button type="button" class="filter-chip level-chip" data-level="green" style="--lvbg:#D4EDDA;--lvbd:#A8D5B5;--lvc:#1E7E34">🟢 Al dia</button>
       <button type="button" class="filter-chip level-chip" data-level="warn"  style="--lvbg:#FFF3CD;--lvbd:#FFD96A;--lvc:#856404">🟡 Heads-up</button>
@@ -564,7 +570,7 @@ async function loadChatSummary() {
 }
 
 // Filtros globales del search-bar (texto, joyeria, semaforo)
-var search = { text: "", joyerias: new Set(), levels: new Set() };
+var search = { text: "", joyerias: new Set(), levels: new Set(), fases: new Set() };
 
 function cardMatches(c) {
   if (search.text) {
@@ -574,6 +580,10 @@ function cardMatches(c) {
     if (nota.indexOf(t) === -1 && joy.indexOf(t) === -1) return false;
   }
   if (search.joyerias.size > 0 && !search.joyerias.has(c.joyeria)) return false;
+  if (search.fases.size > 0) {
+    var faseNum = c.fase ? ((c.fase.match(/(\d)/) || [])[1] || null) : null;
+    if (!faseNum || !search.fases.has(faseNum)) return false;
+  }
   if (search.levels.size > 0) {
     var term = isTerminal(c);
     var tL = term ? null : totalLevel(c);
@@ -618,7 +628,7 @@ function renderJoyeriaChips() {
 function updateSearchCount() {
   var el = document.getElementById("search-count");
   if (!el) return;
-  var hasFilter = search.text || search.joyerias.size > 0 || search.levels.size > 0;
+  var hasFilter = search.text || search.joyerias.size > 0 || search.levels.size > 0 || search.fases.size > 0;
   if (!hasFilter) { el.textContent = ""; return; }
   var matched = cards.filter(cardMatches).length;
   el.textContent = matched + " de " + cards.length;
@@ -639,12 +649,22 @@ function setupSearchBar() {
       renderBoard();
     });
   });
+  document.querySelectorAll(".fase-chip").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      var f = btn.dataset.fase;
+      if (search.fases.has(f)) { search.fases.delete(f); btn.classList.remove("active"); }
+      else { search.fases.add(f); btn.classList.add("active"); }
+      renderBoard();
+    });
+  });
   document.getElementById("clear-filters").addEventListener("click", function() {
     search.text = "";
     search.joyerias.clear();
     search.levels.clear();
+    search.fases.clear();
     input.value = "";
     document.querySelectorAll(".level-chip").forEach(function(b) { b.classList.remove("active"); });
+    document.querySelectorAll(".fase-chip").forEach(function(b) { b.classList.remove("active"); });
     renderJoyeriaChips();
     renderBoard();
   });
