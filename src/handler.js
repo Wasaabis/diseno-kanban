@@ -36,26 +36,22 @@ export default {
       return new Response(KANBAN_HTML, {headers:{"Content-Type":"text/html;charset=UTF-8"}});
     }
 
+    // /token: refresca access_token usando el refresh_token guardado como secret.
+    // El frontend no envia ningun parametro sensible — solo pide y recibe access_token.
+    // Bootstrap del refresh_token se hace fuera del Worker (curl manual, ver README).
     if (url.pathname === "/token") {
-      const grant_type = url.searchParams.get("grant_type") || "authorization_code";
-      let body;
-      if (grant_type === "refresh") {
-        const rt = url.searchParams.get("refresh_token");
-        body = new URLSearchParams({grant_type:"refresh_token", client_id:"1000.RERIFMR5TE3GIC5F2K7FNXZ6F3NP2M", client_secret:"2584fefcf66e1bc7c5762aeae3284d3d0e8069390c", refresh_token:rt});
-      } else {
-        body = new URLSearchParams({grant_type:"authorization_code", client_id:url.searchParams.get("client_id"), client_secret:url.searchParams.get("client_secret"), redirect_uri:url.searchParams.get("redirect_uri"), code:url.searchParams.get("code")});
+      if (!env.ZOHO_CLIENT_ID || !env.ZOHO_CLIENT_SECRET || !env.ZOHO_REFRESH_TOKEN) {
+        return new Response(JSON.stringify({error:"missing_secrets"}), {status:500, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
       }
+      const body = new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: env.ZOHO_CLIENT_ID,
+        client_secret: env.ZOHO_CLIENT_SECRET,
+        refresh_token: env.ZOHO_REFRESH_TOKEN
+      });
       const resp = await fetch("https://accounts.zoho.com/oauth/v2/token", {method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body});
       const data = await resp.json();
-      if (grant_type === "refresh") {
-        return new Response(JSON.stringify(data), {headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
-      }
-      const html = "<!DOCTYPE html><html><head><title>Token</title><style>body{font-family:sans-serif;max-width:560px;margin:60px auto;padding:20px;background:#f5f5f5}.box{background:#fff;padding:16px;border-radius:8px;margin:12px 0;border:1px solid #ddd}code{display:block;background:#f0f0f0;padding:10px;border-radius:4px;word-break:break-all;font-size:11px}.ok{color:#0a0}.err{color:#c00}button{background:#0066cc;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;margin-left:8px}</style></head><body><h2>Zoho OAuth</h2>" +
-        (data.error
-          ? "<div class=\"box\"><p class=\"err\">Error: " + data.error + "</p><p>" + (data.error_description||"") + "</p></div>"
-          : "<div class=\"box\"><p class=\"ok\">Conexion exitosa</p><p style=\"font-size:11px;color:#888;margin:8px 0 4px\">ACCESS TOKEN</p><code id=\"at\">" + data.access_token + "</code><button onclick=\"navigator.clipboard.writeText(document.getElementById('at').textContent);this.textContent='Copiado!'\">Copiar</button></div><div class=\"box\"><p style=\"font-size:11px;color:#888;margin:0 0 4px\">REFRESH TOKEN</p><code>" + data.refresh_token + "</code></div>"
-        ) + "</body></html>";
-      return new Response(html, {headers:{"Content-Type":"text/html;charset=UTF-8"}});
+      return new Response(JSON.stringify(data), {headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
     }
 
     if (url.pathname === "/kv" && request.method === "GET") {

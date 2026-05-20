@@ -168,10 +168,8 @@ footer{background:#FFF;border-top:1px solid #EBEBEB;padding:8px 28px;display:fle
 
 <script>
 var WORKER = window.location.origin;
-var HARDCODED_REFRESH = "1000.481490c7c5d95d3b63cc085b2f6a14f7.4cfe50ca10f971e5d84dc1d61146ef9c";
 var LS_TOKEN = "fu_token";
 var LS_TOKEN_EXP = "fu_token_exp";
-var LS_REFRESH = "fu_refresh";
 var LS_POSITIONS = "fu_positions";
 
 var COLUMNS = [
@@ -315,9 +313,10 @@ function getSavedToken() {
   return null;
 }
 async function refreshToken() {
-  var rt = localStorage.getItem(LS_REFRESH) || HARDCODED_REFRESH;
+  // El Worker tiene el refresh_token como secret y firma el intercambio internamente.
+  // El frontend solo pide; nunca conoce client_id/client_secret/refresh_token.
   try {
-    var res = await fetch(WORKER + "/token?grant_type=refresh&refresh_token=" + encodeURIComponent(rt));
+    var res = await fetch(WORKER + "/token");
     var data = await res.json();
     if (data.access_token) {
       saveToken(data.access_token, data.expires_in || 3600);
@@ -437,7 +436,6 @@ function emitBornEvents(list) {
 
 /* INIT */
 window.addEventListener("load", async function() {
-  localStorage.setItem(LS_REFRESH, HARDCODED_REFRESH);
   showSpinner();
   var t = await getToken();
   if (t) {
