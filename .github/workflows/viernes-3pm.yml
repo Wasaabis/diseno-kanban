@@ -1,0 +1,30 @@
+name: Veredicto Armando — viernes 3pm MX
+
+# Trigger semanal: viernes 21:00 UTC = viernes 15:00 hora Mty (UTC-6 fijo, MX no aplica DST).
+# Reemplaza el cron de Cloudflare (cuenta saturada 5/5 cron triggers).
+# Llama POST /report/notify del worker del kanban, que computa el veredicto F3 y manda Telegram a Mario.
+# Secrets requeridos en este repo:
+#   - KANBAN_NOTIFY_TOKEN: mismo valor que el secret NOTIFY_TOKEN del worker.
+
+on:
+  schedule:
+    - cron: "0 21 * * 5"
+  workflow_dispatch: # boton manual para probar
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST al worker
+        run: |
+          set -e
+          response=$(curl -sS -X POST \
+            -H "X-Notify-Token: ${{ secrets.KANBAN_NOTIFY_TOKEN }}" \
+            -w "\n%{http_code}" \
+            --max-time 30 \
+            "https://kanban-disetight-band-76ce.contacto-ed2.workers.dev/report/notify")
+          body=$(echo "$response" | head -n -1)
+          code=$(echo "$response" | tail -n 1)
+          echo "HTTP $code"
+          echo "$body"
+          if [ "$code" != "200" ]; then exit 1; fi

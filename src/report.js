@@ -309,6 +309,248 @@ export async function generateAndSaveNarrative(env, weekKey) {
   return { weekKey, narrative };
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// VEREDICTO SEMANAL — cron viernes 15:00 MX, notificacion Telegram a Mario
+// Reglas: memoria del equipo `project_veredicto_armando_criterios.md`.
+//   - Solo F3 cuenta para juzgar. F1/F2 son informativos.
+//   - Semaforo: peor(vida, status). Vida >12d rojo. Status >5d rojo.
+//   - Excluidos: ESPERA-*, IMPRESO, NO NECESITA, IMPRIMIENDO.
+//   - Ventana: vie 15:00 anterior → vie 15:00 actual (7 dias exactos).
+//     Si Armando vino sab/dom, esos eventos se cuentan y se destacan aparte.
+//   - Analisis de chat para repartir culpa: DEFINIDO, NO IMPLEMENTADO TODAVIA.
+// ════════════════════════════════════════════════════════════════════════════
+
+const EXCLUIDOS_VEREDICTO = new Set([
+  "ESPERA - GEMA", "ESPERA - MTTO", "ESPERA",
+  "IMPRESO", "NO NECESITA", "IMPRIMIENDO",
+]);
+
+function colorVida(d) { return d <= 7 ? "verde" : d <= 12 ? "amarillo" : "rojo"; }
+function colorStatus(d) { return d <= 3 ? "verde" : d <= 5 ? "amarillo" : "rojo"; }
+function peorColor(a, b) {
+  const rank = { verde: 0, amarillo: 1, rojo: 2 };
+  return rank[a] >= rank[b] ? a : b;
+}
+
+// Vie 15:00 MX (UTC-6 fijo) = vie 21:00 UTC. Devuelve el ultimo <= nowMs.
+export function previousFriday15MX(nowMs) {
+  for (let i = 0; i < 14; i++) {
+    const candidate = new Date(nowMs - i * DAY_MS);
+    const mx = new Date(candidate.getTime() - 6 * 60 * 60 * 1000);
+    if (mx.getUTCDay() === 5) {
+      const fri15 = Date.UTC(mx.getUTCFullYear(), mx.getUTCMonth(), mx.getUTCDate(), 21, 0, 0);
+      if (fri15 <= nowMs) return fri15;
+    }
+  }
+  throw new Error("no friday cutoff found");
+}
+
+function isWeekendMX(ts) {
+  const mx = new Date(ts - 6 * 60 * 60 * 1000);
+  const dow = mx.getUTCDay();
+  return dow === 6 || dow === 0; // sab=6, dom=0
+}
+
+async function getZohoAccessToken(env) {
+  if (!env.ZOHO_CLIENT_ID || !env.ZOHO_CLIENT_SECRET || !env.ZOHO_REFRESH_TOKEN) {
+    throw new Error("Faltan secrets ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET / ZOHO_REFRESH_TOKEN");
+  }
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: env.ZOHO_CLIENT_ID,
+    client_secret: env.ZOHO_CLIENT_SECRET,
+    refresh_token: env.ZOHO_REFRESH_TOKEN,
+  });
+  const r = await fetch("https://accounts.zoho.com/oauth/v2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const j = await r.json();
+  if (!j.access_token) throw new Error("Zoho no devolvio access_token: " + JSON.stringify(j));
+  return j.access_token;
+}
+
+async function fetchFasesFromZoho(env) {
+  const token = await getZohoAccessToken(env);
+  const url = "https://www.zohoapis.com/crm/v2/Quotes/search?criteria=(Etapa:equals:Dise%C3%B1o)&per_page=200";
+  const r = await fetch(url, { headers: { Authorization: "Zoho-oauthtoken " + token } });
+  const j = await r.json();
+  const out = {};
+  for (const rec of (j.data || [])) {
+    const m = (rec.Fases || "").match(/(\d)/);
+    out[rec.id] = m ? `F${m[1]}` : null;
+  }
+  return out;
+}
+
+function faseDe(map, id) { return map[id] || "?"; }
+function emptyBucket() { return { F1: 0, F2: 0, F3: 0, "?": 0 }; }
+function totalBucket(b) { return b.F1 + b.F2 + b.F3 + b["?"]; }
+function fmtBucket(b) {
+  const base = `F1: ${b.F1} · F2: ${b.F2} · F3: ${b.F3}`;
+  return b["?"] ? `${base} · ?: ${b["?"]}` : base;
+}
+
+function computeFlowWindow(eventsInWindow, fasePorId) {
+  const nacidas = emptyBucket(), terminadas = emptyBucket(), avances = emptyBucket();
+  const nacidasNotas = { F1: [], F2: [], F3: [], "?": [] };
+  const terminadasNotas = { F1: [], F2: [], F3: [], "?": [] };
+  for (const ev of eventsInWindow) {
+    const fase = faseDe(fasePorId, ev.cardId);
+    if (ev.type === "born") { nacidas[fase]++; nacidasNotas[fase].push(ev.nota || "?"); }
+    else if (ev.type === "terminated") { terminadas[fase]++; terminadasNotas[fase].push(ev.nota || "?"); }
+    else if (ev.type === "col_change") {
+      const fi = COL_ORDER.indexOf(ev.from), ti = COL_ORDER.indexOf(ev.to);
+      if (fi >= 0 && ti > fi) avances[fase]++;
+    }
+  }
+  return { nacidas, terminadas, avances, nacidasNotas, terminadasNotas };
+}
+
+export function computeStuckByFase(positions, fasePorId) {
+  const now = Date.now();
+  const f3 = [], otras = [];
+  for (const [id, p] of Object.entries(positions)) {
+    if (EXCLUIDOS_VEREDICTO.has(p.status)) continue;
+    const dStatus = Math.floor((now - (p.statusSince || p.bornAt)) / DAY_MS);
+    if (dStatus <= 5) continue;
+    const fase = faseDe(fasePorId, id);
+    const rec = { id, ...p, dStatus, fase };
+    if (fase === "F3") f3.push(rec);
+    else otras.push(rec);
+  }
+  f3.sort((a, b) => b.dStatus - a.dStatus);
+  otras.sort((a, b) => b.dStatus - a.dStatus);
+  return { f3, otras };
+}
+
+export function computeVerdict(positions, fasePorId) {
+  const now = Date.now();
+  const f3 = [];
+  for (const [id, p] of Object.entries(positions)) {
+    if (faseDe(fasePorId, id) !== "F3") continue;
+    if (EXCLUIDOS_VEREDICTO.has(p.status)) continue;
+    const dVida = Math.floor((now - p.bornAt) / DAY_MS);
+    const dStatus = Math.floor((now - (p.statusSince || p.bornAt)) / DAY_MS);
+    const cVida = colorVida(dVida), cStatus = colorStatus(dStatus);
+    f3.push({ id, ...p, dVida, dStatus, cVida, cStatus, color: peorColor(cVida, cStatus) });
+  }
+  const rojas = f3.filter(c => c.color === "rojo");
+  rojas.sort((a, b) => b.dVida - a.dVida);
+  return {
+    veredicto: rojas.length === 0 ? "libre" : "oficina",
+    f3Count: f3.length,
+    rojas,
+    amarillas: f3.filter(c => c.color === "amarillo").length,
+    verdes: f3.filter(c => c.color === "verde").length,
+  };
+}
+
+async function fetchEventsRange(env, start, cutoff) {
+  // La ventana de 7 dias puede caer entre 2 buckets de friWeekKey. Bajamos ambos.
+  const kCutoff = friWeekKey(cutoff);
+  const kPrev = friWeekKey(cutoff - 7 * DAY_MS);
+  const [a, b] = await Promise.all([
+    env.KV.get("events:" + kCutoff),
+    kPrev !== kCutoff ? env.KV.get("events:" + kPrev) : Promise.resolve(null),
+  ]);
+  const all = [...(a ? JSON.parse(a) : []), ...(b ? JSON.parse(b) : [])];
+  return all.filter(ev => ev.at > start && ev.at <= cutoff);
+}
+
+export async function generateVerdictReport(env, atMs) {
+  const cutoff = previousFriday15MX(atMs);
+  const start = cutoff - 7 * DAY_MS;
+  const [positionsRaw, fasePorId, eventsInWindow] = await Promise.all([
+    env.KV.get("positions"),
+    fetchFasesFromZoho(env),
+    fetchEventsRange(env, start, cutoff),
+  ]);
+  const positions = positionsRaw ? JSON.parse(positionsRaw) : {};
+  return {
+    atMs,
+    cutoff,
+    start,
+    flow: computeFlowWindow(eventsInWindow, fasePorId),
+    stuck: computeStuckByFase(positions, fasePorId),
+    verdict: computeVerdict(positions, fasePorId),
+    weekendEvents: eventsInWindow.filter(ev => isWeekendMX(ev.at)),
+  };
+}
+
+function fmtDateMX(ts) {
+  return new Date(ts).toLocaleDateString("es-MX", { day: "numeric", month: "short", weekday: "short", timeZone: "America/Mexico_City" });
+}
+function fmtTimeMX(ts) {
+  return new Date(ts).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", timeZone: "America/Mexico_City" });
+}
+
+// Mensaje Telegram (Markdown). Asume reader es Mario.
+export function formatVerdictForTelegram(report) {
+  const { cutoff, flow, stuck, verdict, weekendEvents } = report;
+  const labelStart = cutoff - 4 * DAY_MS - 15 * 60 * 60 * 1000;
+  const lines = [];
+  lines.push(`*Reporte Forever Us — ${fmtDateMX(cutoff)} ${fmtTimeMX(cutoff)}*`);
+  lines.push(`_Semana laboral: ${fmtDateMX(labelStart)} 00:00 → ${fmtDateMX(cutoff)} 15:00 MX_`);
+  lines.push("");
+
+  if (verdict.veredicto === "libre") {
+    lines.push("✅ *SABADO LIBRE* — cero F3 rojas");
+  } else {
+    lines.push(`🚨 *VIENES A LA OFICINA* — ${verdict.rojas.length} F3 roja(s):`);
+    for (const c of verdict.rojas) {
+      const motivo = c.cVida === "rojo" && c.cStatus === "rojo" ? "vida+status" : c.cVida === "rojo" ? "vida total" : "status";
+      lines.push(`  🔴 ${c.nota} (${c.joyeria}) · ${c.col}/${c.status} · vida ${c.dVida}d, status ${c.dStatus}d [${motivo}]`);
+    }
+  }
+  lines.push("");
+
+  if (weekendEvents.length > 0) {
+    const notas = [...new Set(weekendEvents.map(e => e.nota).filter(Boolean))];
+    lines.push(`📌 *Fin de semana anterior*: ${weekendEvents.length} eventos · ${notas.join(", ")}`);
+    lines.push("");
+  }
+
+  lines.push(`📥 *Flujo*`);
+  lines.push(`  Nacidas: ${totalBucket(flow.nacidas)} (${fmtBucket(flow.nacidas)})`);
+  lines.push(`  Terminadas: ${totalBucket(flow.terminadas)} (${fmtBucket(flow.terminadas)})${flow.terminadas["?"] ? "  _(las '?' ya salieron de Diseno en Zoho, presumiblemente F3)_" : ""}`);
+  lines.push(`  Avances: ${totalBucket(flow.avances)} (${fmtBucket(flow.avances)})`);
+  lines.push("");
+
+  lines.push("⏸ *Estancadas (>5d sin mover status)*");
+  if (stuck.f3.length === 0) {
+    lines.push("  F3 estricto: 🟢 ninguna");
+  } else {
+    lines.push("  F3 estricto:");
+    for (const c of stuck.f3) lines.push(`    🔴 ${c.nota} · ${c.col}/${c.status} · ${c.dStatus}d`);
+  }
+  if (stuck.otras.length > 0) {
+    lines.push(`  F1/F2 (informativo): ${stuck.otras.length}`);
+    for (const c of stuck.otras.slice(0, 5)) lines.push(`    ⏸ ${c.fase} ${c.nota} · ${c.col}/${c.status} · ${c.dStatus}d`);
+  }
+  return lines.join("\n");
+}
+
+export async function sendTelegram(env, text) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
+    throw new Error("Faltan secrets TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID");
+  }
+  const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: env.TELEGRAM_CHAT_ID,
+      text,
+      parse_mode: "Markdown",
+      disable_web_page_preview: true,
+    }),
+  });
+  const j = await r.json();
+  if (!j.ok) throw new Error("Telegram fallo: " + JSON.stringify(j));
+  return j;
+}
+
 export async function renderReport(env, requestedWeek) {
   const list = await env.KV.list({ prefix: "events:" });
   const weeks = list.keys.map(k => k.name.replace("events:", "")).sort().reverse();

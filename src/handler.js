@@ -1,5 +1,27 @@
 import KANBAN_HTML from "./kanban.html";
-import { renderReport, generateAndSaveNarrative } from "./report.js";
+import {
+  renderReport, generateAndSaveNarrative,
+  generateVerdictReport, formatVerdictForTelegram, sendTelegram,
+} from "./report.js";
+
+async function runScheduledTasks(env) {
+  const now = Date.now();
+  // Veredicto + notificacion Telegram
+  try {
+    const report = await generateVerdictReport(env, now);
+    const text = formatVerdictForTelegram(report);
+    await sendTelegram(env, text);
+  } catch (err) {
+    console.error("scheduled verdict failed:", err?.message || err);
+  }
+  // Narrativa semanal (sin bloquear si falla)
+  try {
+    const targetKey = friWeekKey(now - 24 * 60 * 60 * 1000);
+    await generateAndSaveNarrative(env, targetKey);
+  } catch (err) {
+    console.error("scheduled narrative failed:", err?.message || err);
+  }
+}
 
 function friWeekKey(ts) {
   const mx = new Date(ts - 6 * 60 * 60 * 1000);
@@ -12,16 +34,12 @@ function friWeekKey(ts) {
 }
 
 export default {
-  // Cron: viernes 14:00 UTC = 8am Mty (Mexico no aplica DST desde 2022, UTC-6 fijo).
-  // En ese momento la semana que acaba de cerrar es la que empezo el viernes anterior:
-  // resto 24h al timestamp para caer en jueves y friWeekKey devuelve la llave correcta.
+  // Cron: viernes 21:00 UTC = 15:00 Mty (Mexico UTC-6 fijo).
+  // Genera y envia via Telegram el veredicto sabado libre/oficina + flujo semanal.
+  // Tambien guarda la narrativa Haiku para la semana viernes-jueves que cerro (mismo timestamp
+  // restando 24h cae en jueves y friWeekKey devuelve la llave correcta).
   async scheduled(_event, env, ctx) {
-    const targetKey = friWeekKey(Date.now() - 24 * 60 * 60 * 1000);
-    ctx.waitUntil(
-      generateAndSaveNarrative(env, targetKey).catch(err => {
-        console.error("scheduled narrative failed:", err?.message || err);
-      })
-    );
+    ctx.waitUntil(runScheduledTasks(env));
   },
 
   async fetch(request, env) {
@@ -89,6 +107,49 @@ export default {
         return new Response(JSON.stringify({ok:true, ...result}), {headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
       } catch (err) {
         return new Response(JSON.stringify({ok:false, week, error:String(err?.message || err)}), {status:500, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+      }
+    }
+
+    // Veredicto del corte que se ejecutaria AHORA (preview en JSON).
+    // Para HTML/banner visual, el dato vive en este JSON — el front del kanban podria consumirlo.
+    if (url.pathname === "/report/verdict" && request.method === "GET") {
+      try {
+        const report = await generateVerdictReport(env, Date.now());
+        return new Response(JSON.stringify({
+          ok: true,
+          cutoff: report.cutoff,
+          start: report.start,
+          veredicto: report.verdict.veredicto,
+          f3Total: report.verdict.f3Count,
+          rojas: report.verdict.rojas.map(c => ({
+            nota: c.nota, joyeria: c.joyeria, col: c.col, status: c.status,
+            dVida: c.dVida, dStatus: c.dStatus,
+            motivo: c.cVida === "rojo" && c.cStatus === "rojo" ? "vida+status" : c.cVida === "rojo" ? "vida total" : "status",
+          })),
+          weekendEvents: report.weekendEvents.length,
+          flow: report.flow,
+          stuck: { f3Count: report.stuck.f3.length, otrasCount: report.stuck.otras.length },
+        }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      } catch (err) {
+        return new Response(JSON.stringify({ ok: false, error: String(err?.message || err) }), { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      }
+    }
+
+    // Disparo del flujo veredicto + Telegram. Lo invoca GitHub Actions los viernes 21:00 UTC
+    // (.github/workflows/viernes-3pm.yml). Tambien sirve para test manual:
+    //   curl -X POST -H "X-Notify-Token: <token>" "https://<worker>/report/notify"
+    // Requiere header X-Notify-Token = secret NOTIFY_TOKEN del worker, para que nadie spammee.
+    if (url.pathname === "/report/notify" && request.method === "POST") {
+      if (!env.NOTIFY_TOKEN || request.headers.get("X-Notify-Token") !== env.NOTIFY_TOKEN) {
+        return new Response(JSON.stringify({ ok: false, error: "forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      try {
+        const report = await generateVerdictReport(env, Date.now());
+        const text = formatVerdictForTelegram(report);
+        await sendTelegram(env, text);
+        return new Response(JSON.stringify({ ok: true, sent: true, length: text.length }), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      } catch (err) {
+        return new Response(JSON.stringify({ ok: false, error: String(err?.message || err) }), { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
       }
     }
 
