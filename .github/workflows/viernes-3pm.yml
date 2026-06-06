@@ -1,15 +1,14 @@
 name: Veredicto Armando — viernes 3pm MX
 
-# Trigger semanal: viernes 21:00 UTC = viernes 15:00 hora Mty (UTC-6 fijo, MX no aplica DST).
-# Reemplaza el cron de Cloudflare (cuenta saturada 5/5 cron triggers).
+# RETIRADO del schedule 2026-06-05: la cuenta subió a Workers Paid (250 cron
+# triggers) y el cron volvió a Cloudflare (wrangler.jsonc triggers.crons, mismo
+# horario). Este workflow queda SOLO como disparo manual de respaldo.
 # Llama POST /report/notify del worker del kanban, que computa el veredicto F3 y manda Telegram a Mario.
 # Secrets requeridos en este repo:
 #   - KANBAN_NOTIFY_TOKEN: mismo valor que el secret NOTIFY_TOKEN del worker.
 
 on:
-  schedule:
-    - cron: "0 21 * * 5"
-  workflow_dispatch: # boton manual para probar
+  workflow_dispatch: # boton manual de respaldo / pruebas
 
 jobs:
   notify:

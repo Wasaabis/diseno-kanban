@@ -7,11 +7,12 @@
   "observability": {
     "enabled": true
   },
-  // Cron de CF saturado (5/5 en la cuenta). El trigger semanal vive en
-  // GitHub Actions: .github/workflows/viernes-3pm.yml dispara POST /report/notify
-  // los viernes 21:00 UTC (= 15:00 MX). No descomentar el bloque triggers.crons
-  // sin antes verificar que libero un cron en otro Worker.
-  // "triggers": { "crons": ["0 21 * * 5"] },
+  // Veredicto viernes 3pm MX (21:00 UTC; MX no aplica DST). Corre el scheduled
+  // handler de src/handler.js (mismo flujo que POST /report/notify).
+  // Reactivado 2026-06-05: la cuenta subió a Workers Paid (250 cron triggers).
+  // El workflow de GitHub Actions (.github/workflows/viernes-3pm.yml) queda
+  // solo como disparo manual de respaldo (workflow_dispatch).
+  "triggers": { "crons": ["0 21 * * 5"] },
   "rules": [
     { "type": "Text", "globs": ["**/*.html"], "fallthrough": true }
   ],
