@@ -936,7 +936,7 @@ function makeCard(card, col, i) {
       chatBtn.textContent = "...";
       try {
         var token = await ensureToken();
-        window.open("https://forever-us-tienda.contacto-ed2.workers.dev/pedido/" + token + "?staff=diseno", "_blank");
+        window.open("https://foreverus.mx/pedido/" + token + "?staff=diseno", "_blank");
         chatBtn.textContent = prevText;
         chatBtn.disabled = false;
       } catch (err) {

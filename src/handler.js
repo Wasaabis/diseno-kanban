@@ -57,7 +57,7 @@ export default {
     // Proxy server-side al worker de la tienda para el chat de pedidos (cards-summary /
     // token-for-card). El secreto x-fu-staff se inyecta AQUÍ y NUNCA viaja al navegador:
     // el kanban llama estos paths en su mismo origen y este worker reenvía con el secreto.
-    const TIENDA = "https://forever-us-tienda.contacto-ed2.workers.dev";
+    const TIENDA = "https://foreverus.mx";
     if (url.pathname.startsWith("/api/admin/")) {
       const h = new Headers(request.headers);
       h.set("x-fu-staff", env.STAFF_BRIDGE_SECRET || "");
