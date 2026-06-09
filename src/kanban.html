@@ -133,7 +133,7 @@ footer{background:#FFF;border-top:1px solid #EBEBEB;padding:8px 28px;display:fle
     </div>
     <div class="header-right">
       <span id="errorMsg" style="font-size:11px;color:#CC0000;display:none;"></span>
-      <a class="btn-refresh" href="https://forever-us-tienda.contacto-ed2.workers.dev/mensajes?staff=diseno" target="_blank" style="text-decoration:none;display:inline-flex;align-items:center;position:relative;" id="mensajesLink">💬 Mensajes<span id="globalUnreadBadge" style="display:none;background:#CC0000;color:#fff;border-radius:9px;font-size:9px;font-weight:700;padding:1px 5px;margin-left:5px;font-family:JetBrains Mono,monospace;"></span></a>
+      <a class="btn-refresh" href="/fu/mensajes" target="_blank" style="text-decoration:none;display:inline-flex;align-items:center;position:relative;" id="mensajesLink">💬 Mensajes<span id="globalUnreadBadge" style="display:none;background:#CC0000;color:#fff;border-radius:9px;font-size:9px;font-weight:700;padding:1px 5px;margin-left:5px;font-family:JetBrains Mono,monospace;"></span></a>
       <a class="btn-refresh" href="/report" style="text-decoration:none;display:inline-flex;align-items:center;">Reporte</a>
       <button class="btn-refresh" id="refreshBtn">Actualizar</button>
       <button class="btn-settings" id="logoutBtn">Ajustes</button>
@@ -554,7 +554,7 @@ var chatSummary = {};
 
 async function loadChatSummary() {
   try {
-    var r = await fetch("https://forever-us-tienda.contacto-ed2.workers.dev/api/admin/cards-summary");
+    var r = await fetch("/api/admin/cards-summary");
     if (r.ok) chatSummary = await r.json();
   } catch (e) { console.warn("loadChatSummary failed:", e); }
   // Actualizar badge global de mensajes en el header
@@ -907,7 +907,7 @@ function makeCard(card, col, i) {
           clientPhone = (c && (c.Phone || c.Mobile)) || null;
         } catch (e) { console.warn("no phone para card " + card.id, e); }
       }
-      var resp = await fetch("https://forever-us-tienda.contacto-ed2.workers.dev/api/admin/token-for-card", {
+      var resp = await fetch("/api/admin/token-for-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cardId: card.id, nota: card.nota, joyeria: card.joyeria, clientName: card.clientName, clientPhone: clientPhone }),

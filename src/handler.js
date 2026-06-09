@@ -54,6 +54,25 @@ export default {
       return new Response(KANBAN_HTML, {headers:{"Content-Type":"text/html;charset=UTF-8"}});
     }
 
+    // Proxy server-side al worker de la tienda para el chat de pedidos (cards-summary /
+    // token-for-card). El secreto x-fu-staff se inyecta AQUÍ y NUNCA viaja al navegador:
+    // el kanban llama estos paths en su mismo origen y este worker reenvía con el secreto.
+    const TIENDA = "https://forever-us-tienda.contacto-ed2.workers.dev";
+    if (url.pathname.startsWith("/api/admin/")) {
+      const h = new Headers(request.headers);
+      h.set("x-fu-staff", env.STAFF_BRIDGE_SECRET || "");
+      const body = (request.method === "GET" || request.method === "HEAD") ? undefined : await request.arrayBuffer();
+      const resp = await fetch(TIENDA + url.pathname + url.search, { method: request.method, headers: h, body });
+      const out = new Response(resp.body, { status: resp.status });
+      out.headers.set("Content-Type", resp.headers.get("Content-Type") || "application/json");
+      for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
+      return out;
+    }
+    // Link "Mensajes": redirige a la tienda agregando el secreto en ?k (server-side).
+    if (url.pathname === "/fu/mensajes") {
+      return Response.redirect(TIENDA + "/mensajes?k=" + encodeURIComponent(env.STAFF_BRIDGE_SECRET || ""), 302);
+    }
+
     // /token: refresca access_token usando el refresh_token guardado como secret.
     // El frontend no envia ningun parametro sensible — solo pide y recibe access_token.
     // Bootstrap del refresh_token se hace fuera del Worker (curl manual, ver README).
