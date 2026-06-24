@@ -21,5 +21,11 @@
       "binding": "KV",
       "id": "342fe96c3658473eb3dc03407c31a6e6"
     }
+  ],
+  "services": [
+    {
+      "binding": "TIENDA",
+      "service": "forever-us-tienda"
+    }
   ]
 }

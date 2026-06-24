@@ -62,7 +62,9 @@ export default {
       const h = new Headers(request.headers);
       h.set("x-fu-staff", env.STAFF_BRIDGE_SECRET || "");
       const body = (request.method === "GET" || request.method === "HEAD") ? undefined : await request.arrayBuffer();
-      const resp = await fetch(TIENDA + url.pathname + url.search, { method: request.method, headers: h, body });
+      // L14: cable directo (service binding) a la tienda — antes fetch a foreverus.mx rebotaba
+      // con 404 Worker→Worker en la misma cuenta y el chat de pedidos perdía datos intermitente.
+      const resp = await env.TIENDA.fetch(TIENDA + url.pathname + url.search, { method: request.method, headers: h, body });
       const out = new Response(resp.body, { status: resp.status });
       out.headers.set("Content-Type", resp.headers.get("Content-Type") || "application/json");
       for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
