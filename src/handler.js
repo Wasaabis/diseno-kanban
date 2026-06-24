@@ -4,6 +4,26 @@ import {
   generateVerdictReport, formatVerdictForTelegram, sendTelegram,
 } from "./report.js";
 
+// I13: candado del kanban. Antes /api/admin/* (datos de staff), /token (mint de access_token de
+// Zoho), /fu/mensajes (filtraba el STAFF_BRIDGE_SECRET en la URL del redirect) y /kv estaban
+// ABIERTOS a cualquiera con el link. Ahora exigen una cookie de PIN. Fail-closed: sin KANBAN_PIN
+// seteado, nadie entra.
+function kanbanAuthed(request, env) {
+  if (!env.KANBAN_PIN) return false;
+  const cookie = request.headers.get("Cookie") || "";
+  const m = cookie.match(/(?:^|;\s*)kb_auth=([^;]+)/);
+  return !!m && m[1] === env.KANBAN_PIN;
+}
+const PIN_GATE_HTML = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kanban — acceso</title>
+<style>body{font-family:-apple-system,Segoe UI,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f4f1}
+.box{background:#fff;padding:28px;border-radius:12px;border:1px solid rgba(0,0,0,.1);width:300px;max-width:90vw}
+h2{font-size:16px;margin:0 0 16px}input{width:100%;padding:10px;border:1px solid rgba(0,0,0,.15);border-radius:8px;font-size:14px;margin-bottom:12px;box-sizing:border-box}
+button{width:100%;padding:10px;border:none;border-radius:8px;background:#2c2c2a;color:#fff;font-size:14px;cursor:pointer}.err{color:#b00;font-size:12px;min-height:16px}</style></head><body>
+<div class="box"><h2>Tablero de diseños</h2><input id="pin" type="password" placeholder="PIN de acceso" autofocus>
+<div class="err" id="err"></div><button onclick="go()">Entrar</button></div>
+<script>async function go(){const pin=document.getElementById('pin').value.trim();const r=await fetch('/acceso',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});if(r.ok){location.reload();}else{document.getElementById('err').textContent='PIN incorrecto';}}
+document.getElementById('pin').addEventListener('keydown',e=>{if(e.key==='Enter')go();});</script></body></html>`;
+
 async function runScheduledTasks(env) {
   const now = Date.now();
   // Veredicto + notificacion Telegram
@@ -49,9 +69,29 @@ export default {
       "Access-Control-Allow-Headers": "*",
     };
     const url = new URL(request.url);
+    const authed = kanbanAuthed(request, env);
+
+    // I13: puerta por PIN — setea la cookie kb_auth (HttpOnly).
+    if (url.pathname === "/acceso" && request.method === "POST") {
+      let pin = "";
+      try { pin = (await request.json()).pin || ""; } catch { /* */ }
+      if (env.KANBAN_PIN && pin === env.KANBAN_PIN) {
+        return new Response(JSON.stringify({ok:true}), {status:200, headers:{"Content-Type":"application/json","Set-Cookie":`kb_auth=${env.KANBAN_PIN}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000`}});
+      }
+      return new Response(JSON.stringify({ok:false,error:"PIN incorrecto"}), {status:401, headers:{"Content-Type":"application/json"}});
+    }
 
     if (url.pathname === "/" || url.pathname === "") {
+      if (!authed) return new Response(PIN_GATE_HTML, {status:401, headers:{"Content-Type":"text/html;charset=UTF-8"}});
       return new Response(KANBAN_HTML, {headers:{"Content-Type":"text/html;charset=UTF-8"}});
+    }
+
+    // I13: endpoints sensibles (datos de staff, secretos, KV) exigen la cookie de PIN.
+    const sensible = url.pathname.startsWith("/api/admin/") || url.pathname === "/fu/mensajes"
+      || url.pathname === "/token" || url.pathname === "/kv"
+      || url.pathname === "/report" || url.pathname === "/report/verdict";
+    if (sensible && !authed) {
+      return new Response(JSON.stringify({error:"unauthorized"}), {status:401, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
     }
 
     // Proxy server-side al worker de la tienda para el chat de pedidos (cards-summary /
