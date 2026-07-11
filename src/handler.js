@@ -181,11 +181,15 @@ export default {
           cutoff: report.cutoff,
           start: report.start,
           veredicto: report.verdict.veredicto,
+          veredictoEfectivo: (report.verdict.rojas.length + (report.falseWaits?.length || 0)) === 0 ? "libre" : "oficina",
           f3Total: report.verdict.f3Count,
           rojas: report.verdict.rojas.map(c => ({
             nota: c.nota, joyeria: c.joyeria, col: c.col, status: c.status,
             dVida: c.dVida, dStatus: c.dStatus,
             motivo: c.cVida === "rojo" && c.cStatus === "rojo" ? "vida+status" : c.cVida === "rojo" ? "vida total" : "status",
+          })),
+          falseWaits: (report.falseWaits || []).map(f => ({
+            nota: f.nota, joyeria: f.joyeria, col: f.col, status: f.status, cert: f.cert,
           })),
           weekendEvents: report.weekendEvents.length,
           flow: report.flow,

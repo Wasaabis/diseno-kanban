@@ -325,6 +325,42 @@ const EXCLUIDOS_VEREDICTO = new Set([
   "IMPRESO", "NO NECESITA", "IMPRIMIENDO",
 ]);
 
+// Estados que "esconden" una tarjeta del veredicto sin producirla. Si la piedra ya
+// llegó en LGD (piedra_status='LLEGÓ'), la espera es FALSA y la tarjeta cuenta como
+// roja igual — el escondite no vale. IMPRIMIENDO/IMPRESO son producción real, no aquí.
+const HIDE_FALSA = new Set(["ESPERA - GEMA", "ESPERA - MTTO", "ESPERA", "NO NECESITA"]);
+
+// Lee las piedras reales de la base LGD (binding D1 `LGD`). Devuelve mapa nota→registro.
+// Falla-suave: si el binding no está o la query truena, regresa {} y el veredicto sigue
+// funcionando con solo F3 (nunca tumba el reporte del viernes por esto).
+async function fetchPiedrasLGD(env) {
+  if (!env.LGD) return {};
+  try {
+    const { results } = await env.LGD.prepare(
+      "SELECT nota_number, piedra_status, cert_number FROM order_items WHERE nota_number IS NOT NULL"
+    ).all();
+    const map = {};
+    for (const r of results) map[r.nota_number] = r;
+    return map;
+  } catch (e) {
+    console.error("fetchPiedrasLGD failed:", e?.message || e);
+    return {};
+  }
+}
+
+// Esperas falsas: tarjeta escondida en ESPERA-*/NO NECESITA cuya piedra YA LLEGÓ en LGD.
+function computeFalseWaits(positions, piedraMap) {
+  const falsas = [];
+  for (const [id, p] of Object.entries(positions)) {
+    if (!HIDE_FALSA.has(p.status)) continue;
+    const g = piedraMap[p.nota];
+    if (g && g.piedra_status === "LLEGÓ") {
+      falsas.push({ id, nota: p.nota, joyeria: p.joyeria, col: p.col, status: p.status, cert: g.cert_number });
+    }
+  }
+  return falsas;
+}
+
 function colorVida(d) { return d <= 7 ? "verde" : d <= 12 ? "amarillo" : "rojo"; }
 function colorStatus(d) { return d <= 3 ? "verde" : d <= 5 ? "amarillo" : "rojo"; }
 function peorColor(a, b) {
@@ -462,10 +498,11 @@ async function fetchEventsRange(env, start, cutoff) {
 export async function generateVerdictReport(env, atMs) {
   const cutoff = previousFriday15MX(atMs);
   const start = cutoff - 7 * DAY_MS;
-  const [positionsRaw, fasePorId, eventsInWindow] = await Promise.all([
+  const [positionsRaw, fasePorId, eventsInWindow, piedraMap] = await Promise.all([
     env.KV.get("positions"),
     fetchFasesFromZoho(env),
     fetchEventsRange(env, start, cutoff),
+    fetchPiedrasLGD(env),
   ]);
   const positions = positionsRaw ? JSON.parse(positionsRaw) : {};
   return {
@@ -475,6 +512,7 @@ export async function generateVerdictReport(env, atMs) {
     flow: computeFlowWindow(eventsInWindow, fasePorId),
     stuck: computeStuckByFase(positions, fasePorId),
     verdict: computeVerdict(positions, fasePorId),
+    falseWaits: computeFalseWaits(positions, piedraMap),
     weekendEvents: eventsInWindow.filter(ev => isWeekendMX(ev.at)),
   };
 }
@@ -489,19 +527,24 @@ function fmtTimeMX(ts) {
 // Mensaje Telegram (Markdown). Asume reader es Mario.
 export function formatVerdictForTelegram(report) {
   const { cutoff, flow, stuck, verdict, weekendEvents } = report;
+  const falsas = report.falseWaits || [];
+  const totalRojas = verdict.rojas.length + falsas.length;
   const labelStart = cutoff - 4 * DAY_MS - 15 * 60 * 60 * 1000;
   const lines = [];
   lines.push(`*Reporte Forever Us — ${fmtDateMX(cutoff)} ${fmtTimeMX(cutoff)}*`);
   lines.push(`_Semana laboral: ${fmtDateMX(labelStart)} 00:00 → ${fmtDateMX(cutoff)} 15:00 MX_`);
   lines.push("");
 
-  if (verdict.veredicto === "libre") {
-    lines.push("✅ *SABADO LIBRE* — cero F3 rojas");
+  if (totalRojas === 0) {
+    lines.push("✅ *SABADO LIBRE* — cero rojas");
   } else {
-    lines.push(`🚨 *VIENES A LA OFICINA* — ${verdict.rojas.length} F3 roja(s):`);
+    lines.push(`🚨 *VIENES A LA OFICINA* — ${totalRojas} roja(s):`);
     for (const c of verdict.rojas) {
       const motivo = c.cVida === "rojo" && c.cStatus === "rojo" ? "vida+status" : c.cVida === "rojo" ? "vida total" : "status";
       lines.push(`  🔴 ${c.nota} (${c.joyeria}) · ${c.col}/${c.status} · vida ${c.dVida}d, status ${c.dStatus}d [${motivo}]`);
+    }
+    for (const f of falsas) {
+      lines.push(`  🚩 ${f.nota} (${f.joyeria}) · ${f.status} pero la piedra YA LLEGÓ (cert ${f.cert}) — espera FALSA`);
     }
   }
   lines.push("");

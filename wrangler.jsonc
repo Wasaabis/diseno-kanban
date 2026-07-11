@@ -22,6 +22,15 @@
       "id": "342fe96c3658473eb3dc03407c31a6e6"
     }
   ],
+  // Base de piedras LGD (proyecto inventario-lgd). Solo lectura: el veredicto del viernes
+  // cruza ESPERA-GEMA/NO NECESITA contra piedra_status='LLEGÓ' para cazar esperas falsas.
+  "d1_databases": [
+    {
+      "binding": "LGD",
+      "database_name": "lgd_inventory",
+      "database_id": "5b9f6002-7c85-46db-9ee2-f59993975b50"
+    }
+  ],
   "services": [
     {
       "binding": "TIENDA",
