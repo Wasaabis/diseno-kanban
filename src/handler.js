@@ -10,6 +10,13 @@ import {
 // seteado, nadie entra.
 function kanbanAuthed(request, env) {
   if (!env.KANBAN_PIN) return false;
+  // Server-to-server: forever-us-tienda llama /kv por service binding (pendientes de
+  // Armando en el hub, chat de pedidos) — NO trae cookie; se autentica con el secreto
+  // compartido x-fu-staff (el mismo del proxy /api/admin/*). Fail-closed: sin secreto,
+  // el header no vale.
+  const secret = env.STAFF_BRIDGE_SECRET || "";
+  const got = request.headers.get("x-fu-staff") || "";
+  if (secret && got && got === secret) return true;
   const cookie = request.headers.get("Cookie") || "";
   const m = cookie.match(/(?:^|;\s*)kb_auth=([^;]+)/);
   return !!m && m[1] === env.KANBAN_PIN;
