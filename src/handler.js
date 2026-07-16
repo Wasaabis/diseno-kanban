@@ -76,7 +76,9 @@ export default {
       let pin = "";
       try { pin = (await request.json()).pin || ""; } catch { /* */ }
       if (env.KANBAN_PIN && pin === env.KANBAN_PIN) {
-        return new Response(JSON.stringify({ok:true}), {status:200, headers:{"Content-Type":"application/json","Set-Cookie":`kb_auth=${env.KANBAN_PIN}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000`}});
+        // SameSite=None (no Lax): así la cookie viaja también cuando el tablero va embebido en un
+        // iframe de otro dominio (el hub de staff.foreverus.mx). Con Lax el iframe re-pedía PIN.
+        return new Response(JSON.stringify({ok:true}), {status:200, headers:{"Content-Type":"application/json","Set-Cookie":`kb_auth=${env.KANBAN_PIN}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=2592000`}});
       }
       return new Response(JSON.stringify({ok:false,error:"PIN incorrecto"}), {status:401, headers:{"Content-Type":"application/json"}});
     }
