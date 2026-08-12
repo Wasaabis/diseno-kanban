@@ -378,6 +378,19 @@ function computeFalseWaits(positions, piedraMap) {
 // cambio de status puede resetear el reloj de status, pero la fecha de nacimiento
 // no se mueve. Por eso el detector se apoya en ella.
 //
+// Dos cosas relacionadas que parecen bugs y NO lo son (revisadas y confirmadas por
+// Mario el 2026-08-12 — no las "arregles"):
+//   - bornAt cuenta desde que el TABLERO vio la nota, no desde que nacio en Zoho.
+//     Es lo justo: una nota puede pasar 20 dias en otra etapa de Zoho antes de que
+//     la muevan a Diseño, y ese tiempo no es del disenador.
+//   - statusSince se reinicia con cualquier avance. Avanzar las fichas de a poquito
+//     para limpiar ese reloj no sirve de nada: la vida total sigue corriendo y una
+//     ficha roja de vida es castigo automatico aunque la etapa marque dia 0.
+//
+// Pendiente conocido: IMPRIMIENDO / IMPRESO siguen sin cruce contra la realidad —
+// nada sabe si una impresora corrio. Cuando exista el "agregar impresion" (elegir
+// que piezas entran en cada tanda), esa seleccion es la señal que falta.
+//
 // Se necesitan las TRES condiciones, para no castigar trabajo legitimo:
 //   1. Hoy esta en un estado que la esconde del veredicto.
 //   2. Entro a ese estado en las ultimas 48h (jue 15:00 → vie 15:00).
