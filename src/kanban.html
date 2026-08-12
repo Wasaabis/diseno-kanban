@@ -377,6 +377,10 @@ function logEvent(card, type, extras) {
 }
 
 /* POSITIONS */
+// Tarjetas que este tablero saco a proposito (boton "Enviar a Vaciado"). El merge las
+// respeta: sin esto la copia de KV las revivia en el siguiente guardado y se quedaban
+// en `positions` para siempre, ensuciando las metricas del reporte.
+var removedIds = {};
 // Solo los campos que este tablero es dueno de escribir. `vueltas` y `prevBall` los
 // pone el servidor cuando ventas o el cliente actuan; si se emitieran desde aqui, el
 // guardado de Armando los machacaria con la copia vieja que trae en memoria.
@@ -405,6 +409,8 @@ async function savePositions() {
       Object.keys(local).forEach(function(k) { ids[k] = 1; });
       Object.keys(ids).forEach(function(id) {
         var l = local[id], r = remote[id];
+        // Enviada a Vaciado en esta sesion: se saco a proposito, no revivirla desde KV.
+        if (removedIds[id]) return;
         if (!l) { merged[id] = r; return; }   // tarjeta que este tablero no tiene cargada
         if (!r) { merged[id] = l; return; }
         if (touchedAt(r) > touchedAt(l)) {
@@ -1111,6 +1117,7 @@ function makeCard(card, col, i) {
           from: "confirmado", to: "vaciado_zoho",
           fromStatus: card.status, toStatus: "VACIADO"
         });
+        removedIds[card.id] = 1;
         cards = cards.filter(function(c) { return c.id !== card.id; });
         await savePositions();
         renderBoard();

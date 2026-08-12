@@ -323,10 +323,12 @@ export async function generateAndSaveNarrative(env, weekKey) {
 const EXCLUIDOS_VEREDICTO = new Set([
   "ESPERA - GEMA", "ESPERA - MTTO", "ESPERA",
   "IMPRESO", "NO NECESITA", "IMPRIMIENDO",
-  // CON CLIENTE: la bola esta en la cancha del cliente (ventas ya le mando los
-  // renders y esta esperando respuesta). Que el cliente se tarde no es atraso de
-  // Armando, asi que no puede voltear el veredicto del sabado a "oficina".
-  "CON CLIENTE",
+  // ENVIADO / CON CLIENTE: la bola ya no es de Armando (entrego los renders; ventas
+  // los manda y el cliente contesta). Que ellos se tarden no es atraso suyo. OJO:
+  // excluirlos, solos, seria regalarle un boton de un clic para ganarse el sabado
+  // — marcar ENVIADO el viernes a las 2pm esconde la tarjeta y nadie lo nota hasta
+  // el lunes. Por eso existe computeLimpiadaUltimaHora() mas abajo.
+  "ENVIADO", "CON CLIENTE",
 ]);
 
 // Estados que "esconden" una tarjeta del veredicto sin producirla. Si la piedra ya
@@ -363,6 +365,85 @@ function computeFalseWaits(positions, piedraMap) {
     }
   }
   return falsas;
+}
+
+// ── Limpiada de ultima hora ────────────────────────────────────────────────
+// Cazar el patron que describio Mario (2026-08-12): una nota que llevaba semanas
+// sin que nadie la tocara, y de la nada se trabaja jueves/viernes y queda en un
+// estado que la esconde del veredicto. El tablero se ve limpio el viernes a las
+// 15:00 y el sabado sale libre, pero el trabajo no fue parejo: fue una barrida
+// para no venir.
+//
+// El unico ancla que NO se puede reiniciar es la vida total (bornAt): cualquier
+// cambio de status puede resetear el reloj de status, pero la fecha de nacimiento
+// no se mueve. Por eso el detector se apoya en ella.
+//
+// Se necesitan las TRES condiciones, para no castigar trabajo legitimo:
+//   1. Hoy esta en un estado que la esconde del veredicto.
+//   2. Entro a ese estado en las ultimas 48h (jue 15:00 → vie 15:00).
+//   3. Venia DORMIDA: cero eventos suyos en el resto de la semana, y ya era vieja.
+// Una nota que se trabajo toda la semana y se cerro el viernes tiene eventos
+// previos → no se marca. Una que nacio el miercoles y se cerro el viernes tiene
+// su evento "born" dentro de la ventana → tampoco. Solo cae la que estuvo
+// muerta de lunes a miercoles y revivio justo antes del corte.
+const VENTANA_BLITZ_MS = 48 * 60 * 60 * 1000;
+const VIDA_MINIMA_BLITZ = 7;   // dias: mas joven que esto es una nota rapida, no una barrida
+
+export function computeLimpiadaUltimaHora(positions, events, start, cutoff, fasePorId) {
+  const blitzDesde = cutoff - VENTANA_BLITZ_MS;
+  const porCard = {};
+  for (const ev of events) {
+    if (!ev.cardId) continue;
+    (porCard[ev.cardId] = porCard[ev.cardId] || []).push(ev);
+  }
+
+  const sospechosas = [];
+  for (const [id, p] of Object.entries(positions)) {
+    if (faseDe(fasePorId, id) !== "F3") continue;
+    if (!EXCLUIDOS_VEREDICTO.has(p.status)) continue;      // (1) hoy esta escondida
+
+    const propios = (porCard[id] || []).sort((a, b) => a.at - b.at);
+    // (2) el movimiento que la escondio cae en la ventana jue/vie
+    const escondio = propios.filter(ev => EXCLUIDOS_VEREDICTO.has(ev.toStatus) && ev.at >= blitzDesde).pop();
+    if (!escondio) continue;
+    // (3) antes del blitz, silencio total en la semana
+    const previos = propios.filter(ev => ev.at < blitzDesde);
+    if (previos.length > 0) continue;
+
+    const dVida = Math.floor((cutoff - p.bornAt) / DAY_MS);
+    if (dVida < VIDA_MINIMA_BLITZ) continue;
+
+    const dDormida = Math.floor((escondio.at - Math.max(p.bornAt, start)) / DAY_MS);
+    sospechosas.push({
+      id, nota: p.nota, joyeria: p.joyeria, col: p.col, status: p.status,
+      dVida, dDormida,
+      desde: escondio.fromStatus || "?",
+      at: escondio.at,
+    });
+  }
+  sospechosas.sort((a, b) => b.dVida - a.dVida);
+  return sospechosas;
+}
+
+// ── Entregas que ventas no ha confirmado ───────────────────────────────────
+// Informativo, NO cuenta como roja. Una nota que Armando marco ENVIADO y que
+// ventas nunca movio a CON CLIENTE es justo "la bola que llego vacia": o ventas
+// se durmio, o nunca hubo renders que mandar. Cual de las dos no lo sabe el
+// tablero, y cobrarselo a Armando seria injusto — pero verlo listado es lo que
+// hace que la trampa no se sostenga sola.
+const DIAS_ENTREGA_SIN_CONFIRMAR = 2;
+
+export function computeEntregasSinConfirmar(positions, cutoff, fasePorId) {
+  const out = [];
+  for (const [id, p] of Object.entries(positions)) {
+    if (p.col !== "envio" || p.status !== "ENVIADO") continue;
+    const desde = p.ballSince || p.statusSince || p.colSince || p.bornAt;
+    const d = Math.floor((cutoff - desde) / DAY_MS);
+    if (d < DIAS_ENTREGA_SIN_CONFIRMAR) continue;
+    out.push({ id, nota: p.nota, joyeria: p.joyeria, dias: d, fase: faseDe(fasePorId, id) });
+  }
+  out.sort((a, b) => b.dias - a.dias);
+  return out;
 }
 
 function colorVida(d) { return d <= 7 ? "verde" : d <= 12 ? "amarillo" : "rojo"; }
@@ -517,6 +598,8 @@ export async function generateVerdictReport(env, atMs) {
     stuck: computeStuckByFase(positions, fasePorId),
     verdict: computeVerdict(positions, fasePorId),
     falseWaits: computeFalseWaits(positions, piedraMap),
+    limpiada: computeLimpiadaUltimaHora(positions, eventsInWindow, start, cutoff, fasePorId),
+    entregasSinConfirmar: computeEntregasSinConfirmar(positions, cutoff, fasePorId),
     weekendEvents: eventsInWindow.filter(ev => isWeekendMX(ev.at)),
   };
 }
@@ -532,7 +615,11 @@ function fmtTimeMX(ts) {
 export function formatVerdictForTelegram(report) {
   const { cutoff, flow, stuck, verdict, weekendEvents } = report;
   const falsas = report.falseWaits || [];
-  const totalRojas = verdict.rojas.length + falsas.length;
+  const limpiada = report.limpiada || [];
+  const sinConfirmar = report.entregasSinConfirmar || [];
+  // La limpiada de ultima hora pesa igual que una roja: esconder una nota vieja el
+  // viernes a las 2pm no es haberla trabajado.
+  const totalRojas = verdict.rojas.length + falsas.length + limpiada.length;
   const labelStart = cutoff - 4 * DAY_MS - 15 * 60 * 60 * 1000;
   const lines = [];
   lines.push(`*Reporte Forever Us — ${fmtDateMX(cutoff)} ${fmtTimeMX(cutoff)}*`);
@@ -550,8 +637,20 @@ export function formatVerdictForTelegram(report) {
     for (const f of falsas) {
       lines.push(`  🚩 ${f.nota} (${f.joyeria}) · ${f.status} pero la piedra YA LLEGÓ (cert ${f.cert}) — espera FALSA`);
     }
+    for (const l of limpiada) {
+      lines.push(`  🧹 ${l.nota} (${l.joyeria}) · ${l.desde} → ${l.status} el ${fmtDateMX(l.at)} · vida ${l.dVida}d, DORMIDA toda la semana — limpiada de última hora`);
+    }
   }
   lines.push("");
+
+  if (sinConfirmar.length > 0) {
+    lines.push(`📮 *Entregadas que ventas no ha movido* (${sinConfirmar.length}) — _informativo, no cuenta como roja_`);
+    for (const e of sinConfirmar.slice(0, 6)) {
+      lines.push(`  ${e.nota} (${e.joyeria}) · ${e.dias}d en ENVIADO${e.fase && e.fase !== "?" ? ` · ${e.fase}` : ""}`);
+    }
+    lines.push("  _O ventas se durmió, o nunca hubo renders que mandar._");
+    lines.push("");
+  }
 
   if (weekendEvents.length > 0) {
     const notas = [...new Set(weekendEvents.map(e => e.nota).filter(Boolean))];

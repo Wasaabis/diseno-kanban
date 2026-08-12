@@ -260,7 +260,7 @@ export default {
           cutoff: report.cutoff,
           start: report.start,
           veredicto: report.verdict.veredicto,
-          veredictoEfectivo: (report.verdict.rojas.length + (report.falseWaits?.length || 0)) === 0 ? "libre" : "oficina",
+          veredictoEfectivo: (report.verdict.rojas.length + (report.falseWaits?.length || 0) + (report.limpiada?.length || 0)) === 0 ? "libre" : "oficina",
           f3Total: report.verdict.f3Count,
           rojas: report.verdict.rojas.map(c => ({
             nota: c.nota, joyeria: c.joyeria, col: c.col, status: c.status,
@@ -269,6 +269,13 @@ export default {
           })),
           falseWaits: (report.falseWaits || []).map(f => ({
             nota: f.nota, joyeria: f.joyeria, col: f.col, status: f.status, cert: f.cert,
+          })),
+          limpiada: (report.limpiada || []).map(l => ({
+            nota: l.nota, joyeria: l.joyeria, status: l.status, desde: l.desde,
+            dVida: l.dVida, dDormida: l.dDormida, at: l.at,
+          })),
+          entregasSinConfirmar: (report.entregasSinConfirmar || []).map(e => ({
+            nota: e.nota, joyeria: e.joyeria, dias: e.dias, fase: e.fase,
           })),
           weekendEvents: report.weekendEvents.length,
           flow: report.flow,

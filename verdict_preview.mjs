@@ -1,7 +1,14 @@
 // Reporte semanal Forever Us — flujo + estancadas + veredicto sabado.
 // Reglas en: ~/.claude/projects/C--Users-arman-forever-us/memory/project_veredicto_armando_criterios.md
 // Corte: lunes 00:00 MX → viernes 15:00 MX. Trigger real: cron `0 21 * * 5`.
-
+//
+// ⚠ ESTO ES UNA COPIA PARALELA DE LAS REGLAS, NO LA FUENTE DE VERDAD.
+// Quien decide el veredicto real es `src/report.js` (lo corre el cron del viernes).
+// Esta copia ya se habia desincronizado una vez (2026-08-12: le faltaban los estados
+// excluidos nuevos y los dos detectores de trampa), asi que daba un resultado
+// distinto al que llegaba por Telegram. Para un preview FIEL usa el endpoint:
+//     curl -H "Cookie: kb_auth=<PIN>" "<worker>/report/verdict"
+// Si tocas las reglas en report.js y no aqui, este script vuelve a mentir.
 const WORKER = "https://kanban-disetight-band-76ce.contacto-ed2.workers.dev";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 3600 * 1000;
@@ -9,7 +16,8 @@ const HOUR_MS = 3600 * 1000;
 const COL_ORDER = ["diseno", "envio", "confirmado"];
 const EXCLUIDOS = new Set([
   "ESPERA - GEMA", "ESPERA - MTTO", "ESPERA",
-  "IMPRESO", "NO NECESITA", "IMPRIMIENDO"
+  "IMPRESO", "NO NECESITA", "IMPRIMIENDO",
+  "ENVIADO", "CON CLIENTE",
 ]);
 
 function colorVida(d) { return d <= 7 ? "verde" : d <= 12 ? "amarillo" : "rojo"; }
