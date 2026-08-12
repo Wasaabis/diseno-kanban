@@ -60,6 +60,11 @@ header{background:#FFF;border-bottom:1px solid #E8E8F0;padding:14px 28px;display
 .card{background:#FFF;border:1px solid #E8E8F0;border-radius:10px;padding:11px 12px 10px;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,0.06);position:relative;transition:box-shadow .2s,transform .15s;animation:fadeIn .3s ease both;}
 .card:hover{box-shadow:0 4px 14px rgba(0,0,0,0.10);transform:translateY(-1px);}
 .card.dragging{opacity:.3;cursor:grabbing;}
+/* Bola de ventas: la tarjeta se lee pero no se mueve desde este tablero. */
+.card-bola-ventas{cursor:default;border-style:dashed;border-color:#C9C9D6;background:#FCFCFE;}
+.card-bola-ventas:hover{box-shadow:0 1px 4px rgba(0,0,0,0.06);transform:none;}
+.card-bola-ventas .status-btn{opacity:.75;}
+.bola-hint{display:block;margin-top:5px;font-size:9.5px;font-family:JetBrains Mono,monospace;letter-spacing:.03em;color:#8A8A99;}
 .drop-indicator{height:3px;background:#3A86FF;border-radius:3px;margin:2px 0;}
 .card-top-bar{position:absolute;top:0;left:0;right:0;height:3px;border-radius:10px 10px 0 0;}
 .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;margin-top:4px;}
@@ -184,9 +189,10 @@ var STATUSES = {
     {id:"AUN NO",       label:"AUN NO",       bg:"#FFF3CD", color:"#856404", border:"#FFD96A"}
   ],
   envio:[
-    {id:"AUN NO",  label:"AUN NO",  bg:"#FFF3CD", color:"#856404", border:"#FFD96A"},
-    {id:"ENVIADO", label:"ENVIADO", bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
-    {id:"CAMBIOS", label:"CAMBIOS", bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"}
+    {id:"AUN NO",      label:"AUN NO",      bg:"#FFF3CD", color:"#856404", border:"#FFD96A"},
+    {id:"ENVIADO",     label:"ENVIADO",     bg:"#D4EDDA", color:"#1E7E34", border:"#A8D5B5"},
+    {id:"CON CLIENTE", label:"CON CLIENTE", bg:"#E7DDFB", color:"#5B21B6", border:"#C4B5FD"},
+    {id:"CAMBIOS",     label:"CAMBIOS",     bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"}
   ],
   confirmado:[
     {id:"ESPERA - GEMA", label:"ESPERA - GEMA", bg:"#FFE5CC", color:"#C05C00", border:"#FFAA70"},
@@ -209,9 +215,10 @@ var STATUS_ORDER = {
     "AUN NO":       1
   },
   envio: {
-    "AUN NO":  0,
-    "ENVIADO": 1,
-    "CAMBIOS": 2
+    "AUN NO":      0,
+    "ENVIADO":     1,
+    "CON CLIENTE": 2,
+    "CAMBIOS":     3
   },
   confirmado: {
     "ESPERA - GEMA": 0,
@@ -251,6 +258,26 @@ var DAY_MS = 24 * 60 * 60 * 1000;
 //   ESPERA: legacy (data vieja antes de subdividir) — se elimina tras migracion
 // Ninguna es culpa del diseñador, no se cuentan como atasco.
 var TERMINAL_STATES = { confirmado: ["IMPRESO", "NO NECESITA", "ESPERA - GEMA", "ESPERA - MTTO", "ESPERA"] };
+
+// ── Dueno de la bola (columna Envio) ────────────────────────────────────────
+// Cada status de Envio tiene un dueno y SOLO el dueno puede sacarlo de ahi:
+//   AUN NO / CAMBIOS      -> Armando  (los mueve desde este tablero)
+//   ENVIADO / CON CLIENTE -> ventas   (los mueven desde los botones del hub)
+// Por eso nadie puede reiniciar su propio contador: para salir de tu status
+// tienes que pasarle la bola al otro, y el otro se da cuenta si llega vacia.
+// El bloqueo cubre el dropdown Y el arrastre — si solo cubriera el dropdown,
+// Armando podria arrastrar la tarjeta a Confirmado y auto-aprobarse el diseno.
+var BOLA_VENTAS = ["ENVIADO", "CON CLIENTE"];
+function esBolaDeVentas(card) {
+  return card.col === "envio" && BOLA_VENTAS.indexOf(card.status) !== -1;
+}
+// Reloj del hub. Independiente de statusSince: statusSince trae el candado
+// anti-zigzagueo (no se reinicia al retroceder) y ballSince mide, sin castigos,
+// cuanto lleva la bola en la cancha de quien la tiene. Se reinicia en CADA
+// cambio de status de Envio, lo haga quien lo haga.
+function touchedAt(p) {
+  return Math.max(p.ballSince || 0, p.statusSince || 0, p.colSince || 0, p.bornAt || 0);
+}
 
 // Semaforo de tiempo. Devuelve null/"warn"/"alert" segun thresholds.
 //   "warn"  = amarillo (heads-up)
@@ -350,10 +377,52 @@ function logEvent(card, type, extras) {
 }
 
 /* POSITIONS */
+// Solo los campos que este tablero es dueno de escribir. `vueltas` y `prevBall` los
+// pone el servidor cuando ventas o el cliente actuan; si se emitieran desde aqui, el
+// guardado de Armando los machacaria con la copia vieja que trae en memoria.
+function cardToPos(c) {
+  return {col: c.col, status: c.status, bornAt: c.bornAt, colSince: c.colSince,
+          statusSince: c.statusSince, ballSince: c.ballSince, joyeria: c.joyeria, nota: c.nota};
+}
+// Guardado con merge POR TARJETA. Antes se escribia el blob completo desde la copia
+// en memoria de este navegador: si ventas (o el cliente desde su link) movia una
+// tarjeta mientras el tablero estaba abierto, el siguiente guardado de Armando la
+// pisaba con el valor viejo y el cambio se perdia en silencio. Ahora se relee KV y
+// gana la version tocada mas recientemente de cada tarjeta.
 async function savePositions() {
-  var pos = {};
-  cards.forEach(function(c) { pos[c.id] = {col: c.col, status: c.status, bornAt: c.bornAt, colSince: c.colSince, statusSince: c.statusSince, joyeria: c.joyeria, nota: c.nota}; });
-  var json = JSON.stringify(pos);
+  var local = {};
+  cards.forEach(function(c) { local[c.id] = cardToPos(c); });
+
+  var merged = local;
+  try {
+    var res = await fetch(WORKER + "/kv?key=positions");
+    if (res.ok) {
+      var data = await res.json();
+      var remote = data.value ? JSON.parse(data.value) : {};
+      merged = {};
+      var ids = {};
+      Object.keys(remote).forEach(function(k) { ids[k] = 1; });
+      Object.keys(local).forEach(function(k) { ids[k] = 1; });
+      Object.keys(ids).forEach(function(id) {
+        var l = local[id], r = remote[id];
+        if (!l) { merged[id] = r; return; }   // tarjeta que este tablero no tiene cargada
+        if (!r) { merged[id] = l; return; }
+        if (touchedAt(r) > touchedAt(l)) {
+          merged[id] = r;
+          // Reflejarla ya en memoria para no volver a pisarla en el siguiente guardado.
+          var c = cards.find(function(x) { return x.id == id; });
+          if (c) { c.col = r.col; c.status = r.status; c.colSince = r.colSince;
+                   c.statusSince = r.statusSince; c.ballSince = r.ballSince; c.vueltas = r.vueltas || 0; }
+        } else {
+          // Gana lo local, pero encima de la remota: asi sobreviven los campos que
+          // este tablero no escribe (vueltas, prevBall) en vez de perderse.
+          merged[id] = Object.assign({}, r, l);
+        }
+      });
+    }
+  } catch(e) { /* sin red: se guarda lo local, igual que antes */ }
+
+  var json = JSON.stringify(merged);
   localStorage.setItem(LS_POSITIONS, json);
   try {
     await fetch(WORKER + "/kv", {
@@ -362,6 +431,27 @@ async function savePositions() {
       body: JSON.stringify({key: "positions", value: json})
     });
   } catch(e) {}
+}
+// Trae de KV lo que movieron ventas (botones del hub) o el cliente (su link) y lo
+// refleja en el tablero sin que Armando tenga que apretar "Actualizar". Solo adopta
+// la version remota si fue tocada despues que la local, para no revertir un cambio
+// que Armando acabe de hacer y aun no suba.
+async function refreshPositions() {
+  try {
+    var res = await fetch(WORKER + "/kv?key=positions");
+    if (!res.ok) return;
+    var data = await res.json();
+    if (!data.value) return;
+    var remote = JSON.parse(data.value);
+    cards.forEach(function(c) {
+      var r = remote[c.id];
+      if (!r) return;
+      if (touchedAt(r) <= touchedAt(cardToPos(c))) return;
+      c.col = r.col; c.status = r.status;
+      c.colSince = r.colSince; c.statusSince = r.statusSince; c.ballSince = r.ballSince;
+      c.vueltas = r.vueltas || 0;
+    });
+  } catch(e) { /* best-effort */ }
 }
 async function loadPositions() {
   try {
@@ -421,6 +511,11 @@ function mapRecord(r, pos) {
     // statusSince: si no existe (data vieja), arrancar desde colSince — la tarjeta
     // ya llevaba ese tiempo en su status actual implicitamente.
     statusSince: p.statusSince || p.colSince || now,
+    // ballSince: reloj del hub. Data vieja arranca donde statusSince.
+    ballSince: p.ballSince || p.statusSince || p.colSince || now,
+    // vueltas: rondas de cambios pedidas por el cliente. Solo sube, y solo la sube
+    // ventas desde el hub — Armando no tiene forma de bajarla.
+    vueltas: p.vueltas || 0,
     _justBorn: isNew
   };
 }
@@ -490,9 +585,11 @@ function showApp() {
   loadChatSummary().then(renderBoard);
   if (!window._staleTimer) {
     window._staleTimer = setInterval(function() {
-      loadChatSummary().then(renderBoard);
+      refreshPositions().then(loadChatSummary).then(renderBoard);
     }, 60 * 1000);  // refresh summary cada minuto para ver mensajes nuevos
-    window.addEventListener("focus", function() { loadChatSummary().then(renderBoard); });
+    window.addEventListener("focus", function() {
+      refreshPositions().then(loadChatSummary).then(renderBoard);
+    });
   }
 }
 
@@ -783,11 +880,13 @@ function renderBoard() {
 function makeCard(card, col, i) {
   var def = getStatusDef(col.id, card.status);
   var isTaller = card.joyeria === "TALLER";
+  // Bola de ventas: la tarjeta se ve pero no se toca desde este tablero.
+  var bloqueada = esBolaDeVentas(card);
 
   var cardEl = document.createElement("div");
-  cardEl.className = "card";
+  cardEl.className = "card" + (bloqueada ? " card-bola-ventas" : "");
   cardEl.dataset.id = card.id;
-  cardEl.draggable = true;
+  cardEl.draggable = !bloqueada;
   cardEl.style.animationDelay = (i * 0.04) + "s";
 
   var bar = document.createElement("div");
@@ -857,12 +956,21 @@ function makeCard(card, col, i) {
   }
   var arrow = document.createElement("span");
   arrow.className = "status-arrow";
-  arrow.textContent = "v";
+  arrow.textContent = bloqueada ? "·" : "v";
   btn.appendChild(arrow);
   btn.dataset.cardId = card.id;
-  btn.addEventListener("click", function(e) {
-    openDropdown(e, this.dataset.cardId);
-  });
+  if (bloqueada) {
+    // Sin dropdown: esta tarjeta la mueve ventas desde el hub.
+    btn.disabled = true;
+    btn.style.cursor = "not-allowed";
+    btn.title = card.status === "ENVIADO"
+      ? "Ya la entregaste. Ventas la mueve cuando se la mande al cliente."
+      : "Con el cliente. Ventas la mueve cuando el cliente responda.";
+  } else {
+    btn.addEventListener("click", function(e) {
+      openDropdown(e, this.dataset.cardId);
+    });
+  }
   statusArea.appendChild(btn);
 
   // Semaforo de tiempo: dos badges siempre visibles, color segun nivel.
@@ -952,6 +1060,16 @@ function makeCard(card, col, i) {
   statusArea.addEventListener("dragstart", function(e) { e.stopPropagation(); e.preventDefault(); });
   cardEl.appendChild(statusArea);
 
+  // Por que no se puede tocar. Sin esto el candado se siente como una falla.
+  if (bloqueada) {
+    var hint = document.createElement("span");
+    hint.className = "bola-hint";
+    hint.textContent = card.status === "ENVIADO"
+      ? "→ ventas la manda al cliente"
+      : "→ esperando respuesta del cliente";
+    cardEl.appendChild(hint);
+  }
+
   // Boton "Enviar a Vaciado" solo en CONFIRMADO con status IMPRESO o NO NECESITA.
   // Cambia la Etapa de la Quote en Zoho a "Vaciado" — la tarjeta desaparece del
   // tablero (filtro Etapa=Diseño deja de matchearla) y queda contada como
@@ -1011,10 +1129,15 @@ function makeCard(card, col, i) {
     cardEl.appendChild(action);
   }
 
-  cardEl.addEventListener("dragstart", function(e) { onDragStart(e, card.id); });
+  if (bloqueada) {
+    // Candado duro: ni arrastre de escritorio ni arrastre tactil.
+    cardEl.addEventListener("dragstart", function(e) { e.preventDefault(); e.stopPropagation(); });
+  } else {
+    cardEl.addEventListener("dragstart", function(e) { onDragStart(e, card.id); });
+    cardEl.addEventListener("touchstart", function(e) { onTouchStart(e, card.id); }, {passive: false});
+  }
   cardEl.addEventListener("dragend", onDragEnd);
   cardEl.addEventListener("dragover", function(e) { e.preventDefault(); e.stopPropagation(); });
-  cardEl.addEventListener("touchstart", function(e) { onTouchStart(e, card.id); }, {passive: false});
 
   return cardEl;
 }
@@ -1060,6 +1183,7 @@ function insertCard(card, colId, insertIdx) {
     var now = Date.now();
     card.colSince = now;
     card.statusSince = now;
+    card.ballSince = now;
     logEvent(card, "col_change", {from: prevCol, to: colId, fromStatus: prevStatus, toStatus: newStatus});
     // No emitir terminated aqui — la unica via de cierre es el boton "Enviar a Vaciado".
   }
@@ -1113,6 +1237,9 @@ function onDrop(colId, clientY) {
   if (!draggingId) return;
   var card = cards.find(function(c) { return c.id == draggingId; });
   if (!card) return;
+  // Segundo candado (el primero es draggable=false). Si la bola es de ventas la
+  // tarjeta no se mueve ni por arrastre tactil ni por un drag que se cuele.
+  if (esBolaDeVentas(card)) { draggingId = null; renderBoard(); return; }
   var idx = getInsertIndex(colId, clientY || 0);
   insertCard(card, colId, idx);
   draggingId = null;
@@ -1191,6 +1318,9 @@ function openDropdown(e, cardId) {
   if (!card) return;
   dropdownCardId = cardId;
   var statuses = STATUSES[card.col] || [];
+  // CON CLIENTE lo declara ventas ("ya se lo mandé"), no Armando. Sin este filtro
+  // podria saltarse el paso desde AUN NO y marcar como enviado algo que nadie mando.
+  statuses = statuses.filter(function(s) { return s.id !== "CON CLIENTE"; });
   var dd = document.getElementById("dropdown");
   dd.innerHTML = "";
   statuses.forEach(function(s) {
@@ -1218,6 +1348,8 @@ function openDropdown(e, cardId) {
 }
 function selectStatus(statusId) {
   var card = cards.find(function(c) { return c.id == dropdownCardId; });
+  // Candado de respaldo: ni tarjetas cuya bola es de ventas, ni marcar CON CLIENTE.
+  if (card && (esBolaDeVentas(card) || statusId === "CON CLIENTE")) { closeDropdown(); return; }
   if (card) {
     var prevStatus = card.status;
     if (prevStatus !== statusId) {
@@ -1226,6 +1358,10 @@ function selectStatus(statusId) {
       if (isStatusAdvance(card.col, prevStatus, statusId)) {
         card.statusSince = Date.now();
       }
+      // ballSince (reloj del hub) SI se reinicia siempre: mide cuanto lleva la bola
+      // en la cancha actual. No necesita candado anti-zigzagueo porque nadie puede
+      // sacar su propia bola sin pasarsela al otro.
+      card.ballSince = Date.now();
       card.status = statusId;
       logEvent(card, "status_change", {from: card.col, to: card.col, fromStatus: prevStatus, toStatus: statusId});
       // No emitir terminated automatico — solo el boton "Enviar a Vaciado" cierra.

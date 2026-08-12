@@ -323,6 +323,10 @@ export async function generateAndSaveNarrative(env, weekKey) {
 const EXCLUIDOS_VEREDICTO = new Set([
   "ESPERA - GEMA", "ESPERA - MTTO", "ESPERA",
   "IMPRESO", "NO NECESITA", "IMPRIMIENDO",
+  // CON CLIENTE: la bola esta en la cancha del cliente (ventas ya le mando los
+  // renders y esta esperando respuesta). Que el cliente se tarde no es atraso de
+  // Armando, asi que no puede voltear el veredicto del sabado a "oficina".
+  "CON CLIENTE",
 ]);
 
 // Estados que "esconden" una tarjeta del veredicto sin producirla. Si la piedra ya

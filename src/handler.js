@@ -97,7 +97,7 @@ export default {
 
     // I13: endpoints sensibles (datos de staff, secretos, KV) exigen la cookie de PIN.
     const sensible = url.pathname.startsWith("/api/admin/") || url.pathname === "/fu/mensajes"
-      || url.pathname === "/token" || url.pathname === "/kv"
+      || url.pathname === "/token" || url.pathname === "/kv" || url.pathname === "/card-status"
       || url.pathname === "/report" || url.pathname === "/report/verdict";
     if (sensible && !authed) {
       return new Response(JSON.stringify({error:"unauthorized"}), {status:401, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
@@ -152,6 +152,76 @@ export default {
       const body = await request.json();
       await env.KV.put(body.key, body.value);
       return new Response(JSON.stringify({ok:true}), {headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+    }
+
+    // Mueve UNA sola tarjeta. Existe para que la tienda (botones de ventas en el hub y
+    // el link del cliente) no tenga que reescribir el blob `positions` completo: ese
+    // camino pisaba en silencio lo que Armando tuviera abierto en su tablero, y al reves.
+    // `expect` es el candado de concurrencia: si la tarjeta ya no esta en el status que
+    // el hub creia, se rechaza con 409 en lugar de aplicar la accion sobre otra cosa
+    // (doble clic, dos vendedores a la vez, o una pantalla que se quedo vieja).
+    if (url.pathname === "/card-status" && request.method === "POST") {
+      let body;
+      try { body = await request.json(); } catch { body = null; }
+      const cardId = body && body.cardId;
+      const status = body && body.status;
+      if (!cardId || (!status && !body.undo)) {
+        return new Response(JSON.stringify({ok:false, error:"faltan cardId/status"}), {status:400, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+      }
+      const raw = await env.KV.get("positions");
+      const positions = raw ? JSON.parse(raw) : {};
+      const p = positions[cardId];
+      if (!p) {
+        return new Response(JSON.stringify({ok:false, error:"tarjeta no encontrada"}), {status:404, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+      }
+      if (body.expect && p.status !== body.expect) {
+        return new Response(JSON.stringify({ok:false, error:"conflicto", actual:{col:p.col, status:p.status}}), {status:409, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+      }
+      const now = Date.now();
+      const prevCol = p.col, prevStatus = p.status;
+      const col = body.col || p.col;
+
+      if (body.undo) {
+        // Deshacer un dedazo: restaura el estado EXACTO de antes, incluidos los relojes.
+        // Si solo cambiara el status de vuelta, el contador quedaria en cero y el dedazo
+        // habria borrado los dias reales que llevaba la tarjeta.
+        const snap = p.prevBall;
+        if (!snap) {
+          return new Response(JSON.stringify({ok:false, error:"nada que deshacer"}), {status:409, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+        }
+        p.col = snap.col; p.status = snap.status;
+        p.colSince = snap.colSince; p.statusSince = snap.statusSince; p.ballSince = snap.ballSince;
+        p.vueltas = snap.vueltas || 0;
+        delete p.prevBall;             // un solo nivel: no se deshace el deshacer
+      } else {
+        // Foto del estado previo para que el deshacer pueda devolverlo tal cual.
+        p.prevBall = {col: p.col, status: p.status, colSince: p.colSince,
+                      statusSince: p.statusSince, ballSince: p.ballSince, vueltas: p.vueltas || 0};
+        if (col !== p.col) p.colSince = now;
+        p.col = col;
+        p.status = status;
+        p.statusSince = now;
+        p.ballSince = now;             // reloj del hub: la bola cambio de cancha
+        const delta = Number(body.bumpVueltas) || 0;
+        if (delta) p.vueltas = Math.max(0, (p.vueltas || 0) + delta);
+      }
+      await env.KV.put("positions", JSON.stringify(positions));
+
+      // Mismo bucket semanal que /events, para que el reporte del viernes lo vea.
+      try {
+        const key = "events:" + friWeekKey(now);
+        const existing = await env.KV.get(key);
+        const list = existing ? JSON.parse(existing) : [];
+        list.push({
+          cardId, joyeria: p.joyeria, nota: p.nota,
+          type: p.col !== prevCol ? "col_change" : "status_change",
+          at: now, from: prevCol, to: p.col, fromStatus: prevStatus, toStatus: p.status,
+          source: body.reason || "card-status", by: body.by || null,
+        });
+        await env.KV.put(key, JSON.stringify(list));
+      } catch (err) { console.error("card-status event failed:", err?.message || err); }
+
+      return new Response(JSON.stringify({ok:true, card:{id:cardId, col:p.col, status:p.status, ballSince:p.ballSince, vueltas:p.vueltas || 0}}), {headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
     }
 
     if (url.pathname === "/report") {
