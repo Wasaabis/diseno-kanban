@@ -177,6 +177,12 @@ var LS_TOKEN = "fu_token";
 var LS_TOKEN_EXP = "fu_token_exp";
 var LS_POSITIONS = "fu_positions";
 
+// Muestras propias (forever-us-inventario): ordenes de fabricacion internas que
+// requieren diseño. Entran al tablero junto a las Quotes de Zoho con id "mu-<n>".
+// GET publico; el cambio de status va por /muestra-status (proxy server-side).
+var INV_URL = "https://forever-us-inventario.contacto-ed2.workers.dev";
+var MUESTRAS_PAGE = "https://forever-us-inventario.pages.dev/muestras/";
+
 var COLUMNS = [
   {id:"diseno",     label:"Diseno",     accent:"#2ECC71"},
   {id:"envio",      label:"Envio",      accent:"#F4A100"},
@@ -269,6 +275,9 @@ var TERMINAL_STATES = { confirmado: ["IMPRESO", "NO NECESITA", "ESPERA - GEMA", 
 // Armando podria arrastrar la tarjeta a Confirmado y auto-aprobarse el diseno.
 var BOLA_VENTAS = ["ENVIADO", "CON CLIENTE"];
 function esBolaDeVentas(card) {
+  // Las muestras no tienen "ventas" del otro lado: quien aprueba es el
+  // solicitante (Mario/Camila/Beto) en persona. Armando las mueve libre.
+  if (card.muestra) return false;
   return card.col === "envio" && BOLA_VENTAS.indexOf(card.status) !== -1;
 }
 // Reloj del hub. Independiente de statusSince: statusSince trae el candado
@@ -526,6 +535,101 @@ function mapRecord(r, pos) {
   };
 }
 
+// Muestra (inventario) → tarjeta del tablero. Mismo shape que mapRecord.
+function mapMuestra(m, pos) {
+  var id = "mu-" + m.id;
+  var p = pos[id] || {};
+  var now = Date.now();
+  var desc = [];
+  if (m.material) desc.push(m.material === "oro" ? ("Oro " + (m.ley || "") + " " + (m.color_oro || "")).replace(/\s+/g, " ").trim() : m.material);
+  if (m.gema1_tipo) desc.push(m.gema1_tipo + (m.gema1_peso ? " " + m.gema1_peso + "ct" : ""));
+  var refs = [];
+  try { refs = JSON.parse(m.referencias_json || "[]") || []; } catch (e) {}
+  return {
+    id: id,
+    muestra: true,
+    muRealId: m.id,
+    joyeria: "MUESTRA",
+    nota: (m.folio || ("MU-" + m.id)) + " · " + (m.nombre_modelo || m.tipo_producto || "") + (desc.length ? " · " + desc.join(" · ") : ""),
+    fase: null,
+    clientName: m.solicitante || null,
+    contactId: null,
+    anotaciones: m.anotaciones || null,
+    referencias: refs,
+    col: p.col || "diseno",
+    status: p.status || "AUN NO",
+    bornAt: p.bornAt || now,
+    colSince: p.colSince || now,
+    statusSince: p.statusSince || p.colSince || now,
+    ballSince: p.ballSince || p.statusSince || p.colSince || now,
+    vueltas: p.vueltas || 0,
+    _justBorn: !p.bornAt
+  };
+}
+
+// Jala las muestras "En diseño" del inventario. Nunca truena el tablero:
+// si el inventario no responde, el kanban sigue con puras Quotes de Zoho.
+async function fetchMuestras(pos) {
+  try {
+    var r = await fetch(INV_URL + "/api/muestras?status=" + encodeURIComponent("En diseño"));
+    var list = await r.json();
+    if (!Array.isArray(list)) return [];
+    return list.map(function(m) { return mapMuestra(m, pos); });
+  } catch (e) {
+    console.warn("muestras no disponibles:", e);
+    return [];
+  }
+}
+
+// Overlay de referencias/anotaciones de una muestra (guia visual para Armando).
+function openMuestraInfo(card) {
+  var old = document.getElementById("muInfoOvl");
+  if (old) old.remove();
+  var ovl = document.createElement("div");
+  ovl.id = "muInfoOvl";
+  ovl.style.cssText = "position:fixed;inset:0;background:rgba(15,15,25,.72);z-index:900;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;";
+  ovl.addEventListener("click", function(e) { if (e.target === ovl) ovl.remove(); });
+  var box = document.createElement("div");
+  box.style.cssText = "background:#fff;border-radius:14px;max-width:640px;width:100%;padding:24px 26px;position:relative;max-height:88vh;overflow-y:auto;";
+  var h = "<div style='font-weight:700;font-size:15px;margin-bottom:2px;'>" + card.nota + "</div>";
+  h += "<div style='font-size:12px;color:#888;margin-bottom:14px;'>Muestra pedida por " + (card.clientName || "?") + "</div>";
+  if (card.anotaciones) {
+    h += "<div style='font-size:11px;font-weight:700;letter-spacing:.08em;color:#8A6D2F;margin-bottom:6px;'>ANOTACIONES</div>";
+    h += "<div style='font-size:13px;line-height:1.6;white-space:pre-wrap;background:#FAF7EE;border:1px solid #B8985A44;border-radius:8px;padding:12px 14px;margin-bottom:16px;'></div>";
+  }
+  if ((card.referencias || []).length) {
+    h += "<div style='font-size:11px;font-weight:700;letter-spacing:.08em;color:#8A6D2F;margin-bottom:6px;'>REFERENCIAS (" + card.referencias.length + ")</div>";
+    h += "<div id='muRefsGrid' style='display:flex;gap:10px;flex-wrap:wrap;'></div>";
+  } else if (!card.anotaciones) {
+    h += "<div style='font-size:13px;color:#888;'>Esta muestra no trae referencias ni anotaciones.</div>";
+  }
+  h += "<div style='margin-top:18px;text-align:right;'><button id='muInfoClose' style='padding:7px 16px;border:1px solid #DDD;background:#F4F5F7;border-radius:8px;cursor:pointer;font-size:12px;'>Cerrar</button></div>";
+  box.innerHTML = h;
+  // Anotaciones como texto (no innerHTML) para no inyectar nada
+  if (card.anotaciones) {
+    var notasDiv = box.querySelector("div[style*='pre-wrap']");
+    if (notasDiv) notasDiv.textContent = card.anotaciones;
+  }
+  var grid = box.querySelector("#muRefsGrid");
+  if (grid) {
+    (card.referencias || []).forEach(function(r) {
+      var a = document.createElement("a");
+      a.href = INV_URL + r.url;
+      a.target = "_blank";
+      a.style.cssText = "display:block;width:118px;height:118px;border-radius:8px;overflow:hidden;border:1px solid #E5E1D8;";
+      var img = document.createElement("img");
+      img.src = INV_URL + r.url;
+      img.loading = "lazy";
+      img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;";
+      a.appendChild(img);
+      grid.appendChild(a);
+    });
+  }
+  ovl.appendChild(box);
+  document.body.appendChild(ovl);
+  box.querySelector("#muInfoClose").addEventListener("click", function() { ovl.remove(); });
+}
+
 function emitBornEvents(list) {
   var newborns = list.filter(function(c) { return c._justBorn; });
   newborns.forEach(function(c) {
@@ -553,7 +657,7 @@ async function loadAndShow() {
     var data = await zohoGet("Quotes/search?criteria=(Etapa:equals:Dise%C3%B1o)&per_page=200");
     if (data.status === "error" || data.code) throw new Error(data.message || "Error");
     var pos = await loadPositions();
-    cards = (data.data || []).map(function(r) { return mapRecord(r, pos); });
+    cards = (data.data || []).map(function(r) { return mapRecord(r, pos); }).concat(await fetchMuestras(pos));
     emitBornEvents(cards);
     showApp();
   } catch(e) {
@@ -611,7 +715,7 @@ document.getElementById("connectBtn").addEventListener("click", async function()
     if (data.status === "error" || data.code) throw new Error(data.message || "Token invalido");
     saveToken(inp, 3600);
     var pos = await loadPositions();
-    cards = (data.data || []).map(function(r) { return mapRecord(r, pos); });
+    cards = (data.data || []).map(function(r) { return mapRecord(r, pos); }).concat(await fetchMuestras(pos));
     emitBornEvents(cards);
     showApp();
   } catch(e) {
@@ -628,7 +732,7 @@ document.getElementById("refreshBtn").addEventListener("click", async function()
   try {
     var data = await zohoGet("Quotes/search?criteria=(Etapa:equals:Dise%C3%B1o)&per_page=200");
     var pos = await loadPositions();
-    cards = (data.data || []).map(function(r) { return mapRecord(r, pos); });
+    cards = (data.data || []).map(function(r) { return mapRecord(r, pos); }).concat(await fetchMuestras(pos));
     emitBornEvents(cards);
     renderJoyeriaChips();
     await loadChatSummary();
@@ -904,7 +1008,12 @@ function makeCard(card, col, i) {
   ch.className = "card-header";
   var badge = document.createElement("span");
   badge.className = "joyeria-badge";
-  badge.style.cssText = "background:" + (isTaller?"#FFF3E0":"#EFF6FF") + ";border:1px solid " + (isTaller?"#FFB74D55":"#93C5FD55") + ";color:" + (isTaller?"#E65100":"#1D4ED8");
+  if (card.muestra) {
+    // Dorado Forever Us: distingue las muestras propias de los pedidos de cliente
+    badge.style.cssText = "background:#FAF3E3;border:1px solid #B8985A88;color:#8A6D2F";
+  } else {
+    badge.style.cssText = "background:" + (isTaller?"#FFF3E0":"#EFF6FF") + ";border:1px solid " + (isTaller?"#FFB74D55":"#93C5FD55") + ";color:" + (isTaller?"#E65100":"#1D4ED8");
+  }
   badge.textContent = card.joyeria;
   var nota = document.createElement("span");
   nota.className = "nota-label";
@@ -1005,10 +1114,25 @@ function makeCard(card, col, i) {
   statusPill.textContent = "⏸ " + dS + "d";
   statusArea.appendChild(statusPill);
 
+  // Muestras: sin chat de cliente. En su lugar, boton de referencias/anotaciones
+  // para que Armando vea la guia visual y las notas del solicitante.
+  if (card.muestra) {
+    var infoBtn = document.createElement("button");
+    var nRefs = (card.referencias || []).length;
+    infoBtn.className = "chat-open-btn";
+    infoBtn.style.cssText = "padding:3px 8px;font-size:10px;font-family:JetBrains Mono,monospace;background:transparent;color:#8A6D2F;border:1px solid #B8985A88;border-radius:6px;cursor:pointer;letter-spacing:0.04em;font-weight:600;";
+    infoBtn.textContent = "📷 " + (nRefs ? nRefs + " ref" + (nRefs > 1 ? "s" : "") : "notas");
+    infoBtn.title = "Ver referencias y anotaciones de la muestra";
+    infoBtn.addEventListener("mousedown", function(e) { e.stopPropagation(); });
+    infoBtn.addEventListener("dragstart", function(e) { e.stopPropagation(); e.preventDefault(); });
+    infoBtn.addEventListener("click", function(e) { e.stopPropagation(); openMuestraInfo(card); });
+    statusArea.appendChild(infoBtn);
+  }
+
   // Boton "abrir chat con cliente" en toda tarjeta no terminal.
   // El cliente accede al chat desde el portal (footer "Mi pedido" en la tienda),
   // no necesitamos copiar link. Solo Armando abre la conversacion para responder.
-  if (!term) {
+  if (!term && !card.muestra) {
     // Helper: asegura que tenemos un token en chatSummary[card.id], generandolo
     // bajo demanda con un solo fetch que ademas extrae Phone del Contact si toca.
     async function ensureToken() {
@@ -1112,7 +1236,15 @@ function makeCard(card, col, i) {
       sendBtn.textContent = "Enviando...";
       sendBtn.style.opacity = "0.6";
       try {
-        await zohoPut("Quotes/" + card.id, { data: [{ Etapa: "Vaciado" }] });
+        if (card.muestra) {
+          // Muestra propia: el cierre no toca Zoho — avisa al inventario
+          // (proxy server-side con el token admin) → status "En fabricación".
+          var mresp = await fetch("/muestra-status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: card.muRealId, status: "En fabricación", expect: "En diseño" }) });
+          var mdata = null; try { mdata = await mresp.json(); } catch (e2) {}
+          if (!mresp.ok) throw new Error((mdata && mdata.error) || "Error " + mresp.status);
+        } else {
+          await zohoPut("Quotes/" + card.id, { data: [{ Etapa: "Vaciado" }] });
+        }
         logEvent(card, "terminated", {
           from: "confirmado", to: "vaciado_zoho",
           fromStatus: card.status, toStatus: "VACIADO"

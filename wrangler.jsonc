@@ -35,6 +35,13 @@
     {
       "binding": "TIENDA",
       "service": "forever-us-tienda"
+    },
+    // Muestras propias: /muestra-status proxyea el cambio de status al
+    // inventario con el secret INV_ADMIN_TOKEN (mismo valor que ADMIN_TOKEN
+    // del inventario; se sube con `wrangler secret put INV_ADMIN_TOKEN`).
+    {
+      "binding": "INVENTARIO",
+      "service": "forever-us-inventario"
     }
   ]
 }

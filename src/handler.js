@@ -98,6 +98,7 @@ export default {
     // I13: endpoints sensibles (datos de staff, secretos, KV) exigen la cookie de PIN.
     const sensible = url.pathname.startsWith("/api/admin/") || url.pathname === "/fu/mensajes"
       || url.pathname === "/token" || url.pathname === "/kv" || url.pathname === "/card-status"
+      || url.pathname === "/muestra-status"
       || url.pathname === "/report" || url.pathname === "/report/verdict";
     if (sensible && !authed) {
       return new Response(JSON.stringify({error:"unauthorized"}), {status:401, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
@@ -146,6 +147,32 @@ export default {
       const key = url.searchParams.get("key");
       const value = await env.KV.get(key);
       return new Response(JSON.stringify({value}), {headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+    }
+
+    // Cambia el status de una MUESTRA (forever-us-inventario) desde el tablero.
+    // El token admin del inventario se inyecta AQUI (secret INV_ADMIN_TOKEN) y
+    // nunca viaja al navegador. Service binding (L14: fetch a URL publica
+    // Worker→Worker en la misma cuenta rebota 404).
+    if (url.pathname === "/muestra-status" && request.method === "POST") {
+      let mbody;
+      try { mbody = await request.json(); } catch { mbody = null; }
+      const muId = mbody && mbody.id;
+      const muStatus = mbody && mbody.status;
+      if (!muId || !muStatus) {
+        return new Response(JSON.stringify({ok:false, error:"faltan id/status"}), {status:400, headers:{"Content-Type":"application/json", ...cors}});
+      }
+      if (!env.INVENTARIO || !env.INV_ADMIN_TOKEN) {
+        return new Response(JSON.stringify({ok:false, error:"falta configurar INVENTARIO/INV_ADMIN_TOKEN en el worker del kanban"}), {status:500, headers:{"Content-Type":"application/json", ...cors}});
+      }
+      const invResp = await env.INVENTARIO.fetch("https://forever-us-inventario.contacto-ed2.workers.dev/api/muestras/" + encodeURIComponent(muId) + "/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": env.INV_ADMIN_TOKEN },
+        body: JSON.stringify({ status: muStatus, expect: mbody.expect })
+      });
+      const invOut = new Response(invResp.body, { status: invResp.status });
+      invOut.headers.set("Content-Type", invResp.headers.get("Content-Type") || "application/json");
+      for (const [k, v] of Object.entries(cors)) invOut.headers.set(k, v);
+      return invOut;
     }
 
     if (url.pathname === "/kv" && request.method === "POST") {
