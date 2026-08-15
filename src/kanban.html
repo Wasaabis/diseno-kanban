@@ -549,7 +549,9 @@ function mapMuestra(m, pos) {
     id: id,
     muestra: true,
     muRealId: m.id,
-    joyeria: "MUESTRA",
+    // Badge = la marca para la que se pide (multi-marca desde 2026-08-14);
+    // el dorado del badge ya distingue que es muestra propia.
+    joyeria: m.marca ? (m.marca === "PERSONAL" ? "PERSONAL·" + String(m.solicitante || "").toUpperCase() : m.marca) : "MUESTRA",
     nota: (m.folio || ("MU-" + m.id)) + " · " + (m.nombre_modelo || m.tipo_producto || "") + (desc.length ? " · " + desc.join(" · ") : ""),
     fase: null,
     clientName: m.solicitante || null,
