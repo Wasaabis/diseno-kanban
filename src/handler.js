@@ -1,3 +1,4 @@
+import { latido } from './latido.js';
 import KANBAN_HTML from "./kanban.html";
 import {
   renderReport, generateAndSaveNarrative,
@@ -66,7 +67,13 @@ export default {
   // Tambien guarda la narrativa Haiku para la semana viernes-jueves que cerro (mismo timestamp
   // restando 24h cae en jueves y friWeekKey devuelve la llave correcta).
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(runScheduledTasks(env));
+    // El veredicto del viernes corre UNA vez por semana: si truena, la siguiente
+    // oportunidad es en siete dias. Queda su latido en la bitacora del hub.
+    ctx.waitUntil(
+      env.HUB_DB
+        ? latido(env.HUB_DB, 'kanban.veredicto_viernes', () => runScheduledTasks(env))
+        : runScheduledTasks(env)
+    );
   },
 
   async fetch(request, env) {

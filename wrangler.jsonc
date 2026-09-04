@@ -29,6 +29,14 @@
       "binding": "LGD",
       "database_name": "lgd_inventory",
       "database_id": "5b9f6002-7c85-46db-9ee2-f59993975b50"
+    },
+    {
+      // Solo para dejar el latido del cron en la bitacora del hub (`cron_runs`),
+      // de donde lo lee Signos Vitales. La vigilancia no vive en la base que
+      // vigila: si esta se cae, el silencio tiene que notarse desde fuera.
+      "binding": "HUB_DB",
+      "database_name": "wasaabis-db",
+      "database_id": "f2567377-6b9c-409d-bde3-eb04982a25a5"
     }
   ],
   "services": [
